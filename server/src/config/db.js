@@ -8,7 +8,8 @@ export async function connectDB(customUri) {
     return mongoose.connection;
   }
 
-  const uri = customUri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/job_mailer';
+  const defaultDb = process.env.NODE_ENV === 'test' ? 'job_mailer_test' : 'job_mailer';
+  const uri = customUri || (process.env.NODE_ENV === 'test' ? `mongodb://127.0.0.1:27017/${defaultDb}` : process.env.MONGODB_URI || `mongodb://127.0.0.1:27017/${defaultDb}`);
 
   try {
     const conn = await mongoose.connect(uri, {

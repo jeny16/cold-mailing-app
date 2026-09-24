@@ -61,19 +61,19 @@ const SettingSchema = new mongoose.Schema(
     },
     dailyLimit: {
       type: Number,
-      default: () => parseInt(process.env.DAILY_EMAIL_LIMIT, 10) || 20,
+      default: () => parseInt(process.env.DAILY_EMAIL_LIMIT, 10) || 50,
     },
     minDelaySeconds: {
       type: Number,
-      default: () => parseInt(process.env.MIN_DELAY_SECONDS, 10) || 10,
+      default: () => parseInt(process.env.MIN_DELAY_SECONDS, 10) || 5,
     },
     maxDelaySeconds: {
       type: Number,
-      default: () => parseInt(process.env.MAX_DELAY_SECONDS, 10) || 30,
+      default: () => parseInt(process.env.MAX_DELAY_SECONDS, 10) || 15,
     },
     maxEmailsPerRun: {
       type: Number,
-      default: () => parseInt(process.env.MAX_EMAILS_PER_RUN, 10) || 10,
+      default: () => parseInt(process.env.MAX_EMAILS_PER_RUN, 10) || 25,
     },
     dryRun: {
       type: Boolean,
