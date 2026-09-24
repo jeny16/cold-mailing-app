@@ -4,8 +4,14 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Load .env
-dotenv.config();
+import fs from 'fs';
+
+// Load .env from workspace root and current directory
+const rootEnvPath = path.resolve(process.cwd(), '../.env');
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath });
+}
+dotenv.config(); // also loads local .env if present
 
 import logger from './config/logger.js';
 import { connectDB } from './config/db.js';
