@@ -82,6 +82,21 @@ export async function startServer(port = process.env.PORT || 5001, host = proces
       logger.info(`==================================================`);
     });
 
+    // Gracefully release port on nodemon restart and termination
+    process.once('SIGUSR2', () => {
+      server.close(() => {
+        process.kill(process.pid, 'SIGUSR2');
+      });
+    });
+
+    process.on('SIGINT', () => {
+      server.close(() => process.exit(0));
+    });
+
+    process.on('SIGTERM', () => {
+      server.close(() => process.exit(0));
+    });
+
     return server;
   } catch (error) {
     logger.error({ err: error.message }, 'Failed to start server');

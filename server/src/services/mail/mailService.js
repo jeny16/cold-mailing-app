@@ -53,7 +53,7 @@ export function getTransporter() {
   const port = parseInt(process.env.SMTP_PORT, 10) || 587;
   const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
+  const pass = process.env.SMTP_PASSWORD ? process.env.SMTP_PASSWORD.replace(/\s+/g, '') : '';
 
   if (!transporterInstance) {
     if (!host || !user || !pass) {
