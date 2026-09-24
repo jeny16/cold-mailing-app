@@ -7,6 +7,17 @@ import { Job } from '../../models/Job.js';
 import { Import } from '../../models/Import.js';
 
 /**
+ * Resolves data directories (data/processed, data/failed) whether running from project root or server/
+ */
+export function resolveDataDir(subdir) {
+  let baseDir = path.resolve(process.cwd(), 'data', subdir);
+  if (process.cwd().endsWith('/server') || process.cwd().endsWith('\\server')) {
+    baseDir = path.resolve(process.cwd(), '..', 'data', subdir);
+  }
+  return baseDir;
+}
+
+/**
  * Safely moves a file from source to target directory.
  */
 export function safeMoveFile(sourcePath, targetDir) {
@@ -69,7 +80,7 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
     });
 
     if (filePath) {
-      safeMoveFile(filePath, path.resolve(process.cwd(), 'data/failed'));
+      safeMoveFile(filePath, resolveDataDir('failed'));
     }
 
     return {
@@ -110,7 +121,7 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
     });
 
     if (filePath) {
-      safeMoveFile(filePath, path.resolve(process.cwd(), 'data/failed'));
+      safeMoveFile(filePath, resolveDataDir('failed'));
     }
 
     return {
@@ -248,9 +259,9 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
   // Move source file if on disk
   if (filePath) {
     if (finalStatus === 'FAILED') {
-      safeMoveFile(filePath, path.resolve(process.cwd(), 'data/failed'));
+      safeMoveFile(filePath, resolveDataDir('failed'));
     } else {
-      safeMoveFile(filePath, path.resolve(process.cwd(), 'data/processed'));
+      safeMoveFile(filePath, resolveDataDir('processed'));
     }
   }
 

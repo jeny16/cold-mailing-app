@@ -11,7 +11,10 @@ const processingFiles = new Set();
  * Initializes the folder watcher on data/incoming/
  */
 export function startFolderWatcher(incomingDir = 'data/incoming') {
-  const resolvedDir = path.resolve(process.cwd(), incomingDir);
+  let resolvedDir = path.resolve(process.cwd(), incomingDir);
+  if (process.cwd().endsWith('/server') || process.cwd().endsWith('\\server')) {
+    resolvedDir = path.resolve(process.cwd(), '..', incomingDir);
+  }
 
   if (!fs.existsSync(resolvedDir)) {
     fs.mkdirSync(resolvedDir, { recursive: true });
