@@ -1,0 +1,26 @@
+{
+  "name": "job-application-mailer",
+  "version": "1.0.0",
+  "description": "Production-quality local Node.js + MongoDB + React application for automated & safe job application emails",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run server\" \"npm run client\"",
+    "server": "npm run dev --prefix server",
+    "client": "npm run dev --prefix client",
+    "test": "npm run test --prefix server",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "build:client": "npm run build --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "keywords": [
+    "cold-email",
+    "job-application",
+    "automation",
+    "mern",
+    "ant-design"
+  ],
+  "author": "Jeny Pansuriya",
+  "license": "ISC"
+}
