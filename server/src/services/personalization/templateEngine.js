@@ -47,6 +47,22 @@ export function buildTemplateContext(job = {}, settings = {}) {
 }
 
 /**
+ * Cleans the email signature so it only keeps:
+ * Best regards,
+ * <Sender Name>
+ * and removes any other trailing lines (portfolio, github, phone, email, title).
+ */
+export function cleanSignature(body, senderName = 'Jeny Pansuriya') {
+  if (!body || typeof body !== 'string') return '';
+  return body
+    .replace(/Best\s+regards,?\s*\n\s*([^\n]+)[\s\S]*$/i, (match, name) => {
+      const cleanName = name && !name.includes(':') && !name.toLowerCase().includes('developer') ? name.trim() : senderName;
+      return `Best regards,\n${cleanName}`;
+    })
+    .trim();
+}
+
+/**
  * Renders both subject and body (text and HTML) for a job.
  * If the job provides an "email" object with subject and body from AI research,
  * it uses that content directly, replacing sender tokens as appropriate.
@@ -69,7 +85,10 @@ export function personalizeEmail(job, settings) {
 
   // Substitute any template or sender placeholders (e.g. {{YOUR_EMAIL}}, {{YOUR_PHONE}}, {{company}})
   const subject = renderTemplate(rawSubject, context);
-  const textBody = renderTemplate(rawBody, context);
+  let textBody = renderTemplate(rawBody, context);
+
+  // Clean signature: keep only "Best regards,\n<Sender Name>"
+  textBody = cleanSignature(textBody, context.senderName);
 
   // Convert plain text newlines into clean HTML paragraphs
   const htmlBody = textBody

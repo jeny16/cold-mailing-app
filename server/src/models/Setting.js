@@ -13,12 +13,7 @@ I have attached my resume for your consideration.
 Thank you for your time.
 
 Best regards,
-{{senderName}}
-Frontend / Full Stack Developer
-Email: {{senderEmail}}
-Phone: {{senderPhone}}
-Portfolio: {{portfolioUrl}}
-GitHub: {{githubUrl}}`;
+{{senderName}}`;
 
 const SettingSchema = new mongoose.Schema(
   {
