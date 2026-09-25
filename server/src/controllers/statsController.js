@@ -7,6 +7,9 @@ import { Setting } from '../models/Setting.js';
 
 export async function getStats(req, res) {
   try {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
     const [
       totalJobs,
       newJobs,
@@ -19,24 +22,77 @@ export async function getStats(req, res) {
       skippedJobs,
       totalContacts,
       totalImports,
+
+      // CRM specific metrics
+      followupsDue,
+      whatsappPending,
+      emailsPending,
+      applicationsSent,
+      replies,
+      interviews,
     ] = await Promise.all([
       Job.countDocuments(),
-      Job.countDocuments({ status: 'NEW' }),
+      Job.countDocuments({ status: { $in: ['NEW', 'RESEARCHED'] } }),
       Job.countDocuments({ status: 'REVIEW' }),
       Job.countDocuments({ status: 'APPROVED' }),
       Job.countDocuments({ status: 'QUEUED' }),
       Job.countDocuments({ status: 'SENDING' }),
-      Job.countDocuments({ status: 'SENT' }),
+      Job.countDocuments({ status: { $in: ['SENT', 'EMAIL_SENT'] } }),
       Job.countDocuments({ status: 'FAILED' }),
       Job.countDocuments({ status: 'SKIPPED' }),
       Contact.countDocuments(),
       Import.countDocuments(),
+
+      // 🔴 Follow-ups Due
+      Job.countDocuments({
+        $or: [
+          { status: 'FOLLOW_UP' },
+          { 'tracking.nextFollowUpAt': { $ne: null, $lte: endOfToday } },
+        ],
+        status: { $nin: ['REJECTED', 'CLOSED'] },
+      }),
+
+      // 🟡 WhatsApp Pending
+      Job.countDocuments({
+        $or: [
+          { status: 'WHATSAPP_PENDING' },
+          {
+            'whatsapp.status': { $in: ['not_sent', 'copied'] },
+            $or: [{ 'contact.phone': { $ne: '' } }, { 'whatsapp.phone': { $ne: '' } }],
+          },
+        ],
+        status: { $nin: ['REJECTED', 'CLOSED', 'WHATSAPP_SENT'] },
+      }),
+
+      // 🔵 Emails Pending
+      Job.countDocuments({
+        $or: [
+          { 'email.status': 'not_sent' },
+          { status: { $in: ['NEW', 'READY_TO_CONTACT', 'REVIEW', 'RESEARCHED', 'APPROVED'] } },
+        ],
+        status: { $nin: ['EMAIL_SENT', 'SENT', 'REJECTED', 'CLOSED'] },
+      }),
+
+      // 🟢 Applications Sent (Email sent or WhatsApp sent)
+      Job.countDocuments({
+        $or: [
+          { status: { $in: ['EMAIL_SENT', 'WHATSAPP_SENT', 'SENT'] } },
+          { 'email.status': 'sent' },
+          { 'whatsapp.status': 'sent' },
+        ],
+      }),
+
+      // 💬 Replies
+      Job.countDocuments({ status: 'REPLIED' }),
+
+      // 🎯 Interviews
+      Job.countDocuments({ status: 'INTERVIEW' }),
     ]);
 
     const queueStatus = await queueManager.getStatus();
     const settings = await Setting.getSettings();
 
-    const recentJobs = await Job.find().sort({ importedAt: -1 }).limit(5);
+    const recentJobs = await Job.find().sort({ createdAt: -1 }).limit(10);
     const recentEmails = await EmailLog.find().sort({ queuedAt: -1 }).limit(5);
 
     res.json({
@@ -57,6 +113,14 @@ export async function getStats(req, res) {
         dailyLimit: settings.dailyLimit,
         queueState: queueStatus.state,
         dryRun: settings.dryRun,
+
+        // CRM dashboard metrics
+        followupsDue,
+        whatsappPending,
+        emailsPending,
+        applicationsSent,
+        replies,
+        interviews,
       },
       recentJobs,
       recentEmails,

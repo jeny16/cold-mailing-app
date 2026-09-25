@@ -1,5 +1,5 @@
 /**
- * Template engine for personalized job applications.
+ * Template engine for personalized job applications and WhatsApp outreach.
  * Replaces {{variable}} placeholders with values.
  */
 export function renderTemplate(templateString, variables = {}) {
@@ -18,7 +18,7 @@ export function renderTemplate(templateString, variables = {}) {
  * Builds the complete variable dictionary for a specific job and settings.
  */
 export function buildTemplateContext(job = {}, settings = {}) {
-  const hrName = (job.hrName || '').trim();
+  const hrName = (job.contact?.hrName || job.hrName || '').trim();
   const hrNameOrHiringTeam = hrName ? hrName : 'Hiring Team';
 
   const senderName = settings.senderName || 'Jeny Pansuriya';
@@ -32,8 +32,8 @@ export function buildTemplateContext(job = {}, settings = {}) {
     role: job.role || '',
     hrName: hrName,
     hrNameOrHiringTeam: hrNameOrHiringTeam,
-    location: job.location || '',
-    jobUrl: job.jobUrl || '',
+    location: job.location || job.job?.location || '',
+    jobUrl: job.jobUrl || job.job?.jobUrl || '',
     senderName,
     senderEmail,
     senderPhone,
@@ -104,8 +104,50 @@ export function personalizeEmail(job, settings) {
   };
 }
 
+/**
+ * Strips phone formatting into clean international format (digits only).
+ * Handles Indian numbers (10 digits -> 91xxxxxxxxxx).
+ */
+export function cleanPhoneNumber(phone) {
+  if (!phone || typeof phone !== 'string') return '';
+  let cleaned = phone.replace(/[^\d]/g, '');
+  if (cleaned.length === 10) {
+    cleaned = '91' + cleaned;
+  }
+  return cleaned;
+}
+
+/**
+ * Generates personalized WhatsApp outreach message for a job.
+ */
+export function generateWhatsAppMessage(job = {}, settings = {}) {
+  // If already provided on job object and not empty, use that
+  if (job?.whatsapp?.message && typeof job.whatsapp.message === 'string' && job.whatsapp.message.trim().length > 0) {
+    return job.whatsapp.message.trim();
+  }
+
+  const context = buildTemplateContext(job, settings);
+  const template = settings.whatsappMessageTemplate ||
+    `Hi {{hrNameOrHiringTeam}}, I'm {{senderName}}, a Full Stack Developer (React / Node.js). I noticed the opening for {{role}} at {{company}} and would love to connect. You can view my portfolio at {{portfolioUrl}}. May I share my resume with you?`;
+
+  return renderTemplate(template, context).trim();
+}
+
+/**
+ * Generates the WhatsApp Click-to-Chat URL
+ * Example: https://wa.me/917600436632?text=...
+ */
+export function generateWhatsAppUrl(phone, message) {
+  const cleanPhone = cleanPhoneNumber(phone);
+  if (!cleanPhone) return '';
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message || '')}`;
+}
+
 export default {
   renderTemplate,
   buildTemplateContext,
   personalizeEmail,
+  cleanPhoneNumber,
+  generateWhatsAppMessage,
+  generateWhatsAppUrl,
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Menu, Button, Badge, Space, Tag, Typography, Tooltip } from 'antd';
+import { Layout, Menu, Button, Badge, Space, Tag, Tooltip } from 'antd';
 import {
   DashboardOutlined,
   CheckCircleOutlined,
@@ -13,7 +13,6 @@ import {
 } from '@ant-design/icons';
 
 const { Header } = Layout;
-const { Text } = Typography;
 
 export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, queueLoading }) {
   const menuItems = [
@@ -62,57 +61,63 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
         top: 0,
         zIndex: 1000,
         height: '64px',
+        lineHeight: 'normal',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+      {/* Left: Brand Logo & Title */}
+      <div
+        onClick={() => onSelectTab('dashboard')}
+        style={{
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          flexShrink: 0,
+          marginRight: '20px',
+        }}
+      >
         <div
-          onClick={() => onSelectTab('dashboard')}
           style={{
-            cursor: 'pointer',
+            width: 38,
+            height: 38,
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, #1890ff 0%, #0050b3 100%)',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            justifyContent: 'center',
+            color: 'white',
+            fontSize: 20,
+            flexShrink: 0,
           }}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #1890ff 0%, #0050b3 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontSize: 18,
-            }}
-          >
-            <MailOutlined />
-          </div>
-          <div>
-            <Text strong style={{ fontSize: 16, display: 'block', lineHeight: 1.2 }}>
-              JOB APPLICATION MAILER
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              Safe AI Cold Mailing System
-            </Text>
-          </div>
+          <MailOutlined />
         </div>
-
-        <Menu
-          mode="horizontal"
-          selectedKeys={[activeTab]}
-          onClick={({ key }) => onSelectTab(key)}
-          items={menuItems}
-          style={{
-            borderBottom: 'none',
-            minWidth: '550px',
-            lineHeight: '62px',
-          }}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.2 }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+            JOB OUTREACH CRM
+          </span>
+          <span style={{ fontSize: 11, color: '#64748b', lineHeight: 1.2, marginTop: 2 }}>
+            Email &amp; WhatsApp Outreach System
+          </span>
+        </div>
       </div>
 
-      <Space size="middle">
+      {/* Center: Main Horizontal Menu */}
+      <Menu
+        mode="horizontal"
+        selectedKeys={[activeTab]}
+        onClick={({ key }) => onSelectTab(key)}
+        items={menuItems}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          borderBottom: 'none',
+          lineHeight: '62px',
+        }}
+      />
+
+      {/* Right: Actions and Live Mode Tag */}
+      <Space size="middle" style={{ flexShrink: 0, marginLeft: '16px' }}>
         {queueStatus?.dryRun ? (
           <Tooltip title="DRY RUN active: Emails are logged without reaching external SMTP. You can toggle this in Settings.">
             <Tag color="orange" style={{ fontWeight: 600, padding: '4px 8px' }}>

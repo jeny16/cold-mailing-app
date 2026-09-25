@@ -4,7 +4,10 @@ import logger from '../../config/logger.js';
 import { validateSingleJob } from '../../validators/jobValidator.js';
 import { normalizeEmail, generateJobKey, checkDuplicate } from '../duplicate/duplicateDetector.js';
 import { Job } from '../../models/Job.js';
+import { Contact } from '../../models/Contact.js';
+import { Setting } from '../../models/Setting.js';
 import { Import } from '../../models/Import.js';
+import { generateWhatsAppMessage, personalizeEmail } from '../personalization/templateEngine.js';
 
 /**
  * Resolves data directories (data/processed, data/failed) whether running from project root or server/
@@ -146,6 +149,8 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
     status: 'PARTIAL',
   });
 
+  const settings = await Setting.getSettings();
+
   let validCount = 0;
   let invalidCount = 0;
   let duplicateCount = 0;
@@ -191,6 +196,7 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
         role: validatedData.role,
         hrEmail: validatedData.hrEmail,
         jobUrl: validatedData.jobUrl,
+        phone: validatedData.contact?.phone,
       });
 
       if (dupCheck.isDuplicate) {
@@ -205,10 +211,26 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
       newCount++;
     }
 
+    // Auto-generate WhatsApp message if blank
+    if (!validatedData.whatsapp.message || validatedData.whatsapp.message.trim().length === 0) {
+      validatedData.whatsapp.message = generateWhatsAppMessage(validatedData, settings);
+    }
+
+    // Auto-generate Email subject & body if blank
+    if (!validatedData.email.subject || !validatedData.email.body) {
+      const rendered = personalizeEmail(validatedData, settings);
+      if (!validatedData.email.subject) validatedData.email.subject = rendered.subject;
+      if (!validatedData.email.body) validatedData.email.body = rendered.textBody;
+      if (!validatedData.email.to) validatedData.email.to = validatedData.hrEmail;
+    }
+
+    const initialStatus = validatedData.tracking?.status || (isDup ? 'REVIEW' : 'READY_TO_CONTACT');
+
     // Persist Job
     const jobDoc = await Job.create({
       company: validatedData.company,
       role: validatedData.role,
+      jobType: validatedData.jobType || 'specific_opening',
       hrName: validatedData.hrName,
       hrEmail: validatedData.hrEmail,
       normalizedHrEmail: normEmail,
@@ -220,21 +242,60 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
       description: validatedData.description,
       requirements: validatedData.requirements,
       notes: validatedData.notes,
-      email: validatedData.email || {
-        to: validatedData.hrEmail,
-        subject: '',
-        body: '',
+      contact: validatedData.contact,
+      job: validatedData.job,
+      email: validatedData.email,
+      whatsapp: validatedData.whatsapp,
+      linkedin: validatedData.linkedin,
+      tracking: {
+        ...validatedData.tracking,
+        status: initialStatus,
       },
+      timeline: [
+        {
+          action: 'IMPORTED',
+          title: 'Prospect Added to CRM',
+          description: `Imported via ${filename} (${source})`,
+          createdAt: new Date(),
+        },
+      ],
       contactVerification: validatedData.contactVerification || {
         status: 'unverified',
         reason: '',
       },
-      status: 'REVIEW',
+      status: initialStatus,
       isDuplicate: isDup,
       duplicateReason: dupReason,
       importId: importRecord._id,
       originalFilename: filename,
     });
+
+    // Upsert Contact in contacts collection
+    try {
+      let contact = await Contact.findOne({ email: normEmail });
+      if (!contact) {
+        contact = await Contact.create({
+          email: normEmail,
+          name: validatedData.hrName || validatedData.contact?.hrName || '',
+          company: validatedData.company,
+          phone: validatedData.contact?.phone || '',
+          whatsapp: validatedData.contact?.whatsapp || '',
+          linkedin: validatedData.contact?.linkedin || '',
+          jobs: [jobDoc._id],
+        });
+      } else {
+        if (validatedData.contact?.phone && !contact.phone) contact.phone = validatedData.contact.phone;
+        if (validatedData.contact?.whatsapp && !contact.whatsapp) contact.whatsapp = validatedData.contact.whatsapp;
+        if (validatedData.contact?.linkedin && !contact.linkedin) contact.linkedin = validatedData.contact.linkedin;
+        if (!contact.jobs) contact.jobs = [];
+        if (!contact.jobs.some((jId) => jId.toString() === jobDoc._id.toString())) {
+          contact.jobs.push(jobDoc._id);
+        }
+        await contact.save();
+      }
+    } catch (contactErr) {
+      logger.warn({ err: contactErr.message }, '[Importer] Contact sync notice');
+    }
 
     insertedJobs.push(jobDoc);
   }

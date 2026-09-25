@@ -3,6 +3,9 @@ import {
   renderTemplate,
   buildTemplateContext,
   personalizeEmail,
+  cleanPhoneNumber,
+  generateWhatsAppMessage,
+  generateWhatsAppUrl,
 } from '../src/services/personalization/templateEngine.js';
 
 describe('Personalization Template Engine', () => {
@@ -72,5 +75,35 @@ describe('Personalization Template Engine', () => {
     expect(rendered.textBody).toContain('Custom AI generated pitch for ABC Technologies.');
     expect(rendered.textBody).toContain('Email: jeny@example.com');
     expect(rendered.textBody).toContain('Phone: +91 9876543210');
+  });
+
+  it('should format and clean phone numbers into international format', () => {
+    expect(cleanPhoneNumber('+91 76004 36632')).toBe('917600436632');
+    expect(cleanPhoneNumber('7600436632')).toBe('917600436632');
+    expect(cleanPhoneNumber('+1 (555) 123-4567')).toBe('15551234567');
+  });
+
+  it('should generate personalized WhatsApp messages and click-to-chat URL', () => {
+    const job = {
+      company: 'TriState Technology',
+      role: 'MERN Stack Developer',
+      contact: {
+        hrName: 'Anand',
+        phone: '+917600436632',
+      },
+    };
+    const settings = {
+      senderName: 'Jeny Pansuriya',
+      portfolioUrl: 'http://jenypansuriya.in',
+    };
+
+    const msg = generateWhatsAppMessage(job, settings);
+    expect(msg).toContain('Hi Anand');
+    expect(msg).toContain('TriState Technology');
+    expect(msg).toContain('http://jenypansuriya.in');
+
+    const url = generateWhatsAppUrl(job.contact.phone, msg);
+    expect(url).toContain('https://wa.me/917600436632?text=');
+    expect(url).toContain(encodeURIComponent('Hi Anand'));
   });
 });

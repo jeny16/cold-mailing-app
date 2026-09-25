@@ -271,9 +271,28 @@ class QueueManager {
       await emailLog.save();
 
       // Update Job
-      job.status = 'SENT';
+      job.status = 'EMAIL_SENT';
       job.sentAt = new Date();
       job.lastError = '';
+
+      if (!job.email) job.email = {};
+      job.email.status = 'sent';
+      job.email.sentAt = new Date();
+      job.email.messageId = sendResult.messageId || '';
+
+      if (!job.tracking) job.tracking = {};
+      job.tracking.status = 'EMAIL_SENT';
+      job.tracking.lastContactedAt = new Date();
+
+      if (!job.timeline) job.timeline = [];
+      job.timeline.push({
+        action: 'EMAIL_SENT',
+        title: 'Email Sent via Queue',
+        description: `Automated email sent to ${normEmail} (Subject: "${subject}")`,
+        createdAt: new Date(),
+        meta: { messageId: sendResult.messageId, isDryRun: sendResult.isDryRun },
+      });
+
       await job.save();
 
       logger.info({ jobId: job._id, recipient: normEmail }, '[Queue] Job marked SENT');

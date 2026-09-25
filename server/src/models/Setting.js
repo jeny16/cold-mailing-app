@@ -15,6 +15,8 @@ Thank you for your time.
 Best regards,
 {{senderName}}`;
 
+const DEFAULT_WHATSAPP_TEMPLATE = `Hi {{hrNameOrHiringTeam}}, I'm {{senderName}}, a Full Stack Developer (React / Node.js). I noticed the opening for {{role}} at {{company}} and would love to connect. You can view my portfolio at {{portfolioUrl}}. May I share my resume with you?`;
+
 const SettingSchema = new mongoose.Schema(
   {
     key: {
@@ -36,7 +38,7 @@ const SettingSchema = new mongoose.Schema(
     },
     portfolioUrl: {
       type: String,
-      default: () => process.env.PORTFOLIO_URL || 'https://jenypansuriya.dev',
+      default: () => process.env.PORTFOLIO_URL || 'http://jenypansuriya.in/',
     },
     githubUrl: {
       type: String,
@@ -53,6 +55,10 @@ const SettingSchema = new mongoose.Schema(
     emailBodyTemplate: {
       type: String,
       default: DEFAULT_BODY_TEMPLATE,
+    },
+    whatsappMessageTemplate: {
+      type: String,
+      default: DEFAULT_WHATSAPP_TEMPLATE,
     },
     dailyLimit: {
       type: Number,

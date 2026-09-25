@@ -1,0 +1,198 @@
+{
+  "batchId": "crm_batch_2026_09_25",
+  "generatedAt": "2026-09-25T14:30:00+05:30",
+  "jobs": [
+    {
+      "id": "job_001",
+      "company": "TriState Technology",
+      "role": "MERN Stack Developer",
+      "jobType": "specific_opening",
+      "contact": {
+        "hrName": "Anand Shah",
+        "hrJobTitle": "Lead Talent Acquisition",
+        "email": "career@tristatetechnology.com",
+        "phone": "+917600436632",
+        "whatsapp": "+917600436632",
+        "linkedin": "https://linkedin.com/company/tristate-technology"
+      },
+      "job": {
+        "jobUrl": "https://www.tristatetechnology.com/career",
+        "source": "Company Career Page",
+        "location": "Ahmedabad",
+        "workMode": "Work From Office",
+        "employmentType": "Full-Time",
+        "experienceRequired": "1-3 years",
+        "requirements": ["ReactJS", "NodeJS", "ExpressJS", "MongoDB", "REST APIs"]
+      },
+      "email": {
+        "subject": "Application for MERN Stack Developer – Jeny Pansuriya",
+        "body": "Dear Anand,\n\nI am writing to apply for the MERN Stack Developer position at TriState Technology.\n\nI have hands-on experience building production React.js and Node.js applications, crafting scalable REST APIs, and working with MongoDB databases. I would love to bring my skill set to TriState Technology.\n\nI have attached my resume for your review.\n\nBest regards,\nJeny Pansuriya",
+        "status": "not_sent",
+        "sentAt": null
+      },
+      "whatsapp": {
+        "message": "Hi Anand, I'm Jeny Pansuriya, a Full Stack Developer (React / Node.js). I saw the MERN Stack Developer opening at TriState Technology and would love to apply. Here is my portfolio: http://jenypansuriya.in. May I share my resume with you?",
+        "status": "not_sent",
+        "copiedAt": null,
+        "sentAt": null
+      },
+      "linkedin": {
+        "profileUrl": "https://linkedin.com/company/tristate-technology",
+        "message": "",
+        "status": "not_contacted"
+      },
+      "tracking": {
+        "status": "NEW",
+        "createdAt": "2026-09-25T14:00:00+05:30",
+        "lastContactedAt": null,
+        "nextFollowUpAt": null,
+        "followUpCount": 0,
+        "notes": "Fast growing tech agency in Ahmedabad."
+      }
+    },
+    {
+      "id": "job_002",
+      "company": "TechIntact",
+      "role": "React Developer",
+      "jobType": "specific_opening",
+      "contact": {
+        "hrName": "Pooja Patel",
+        "hrJobTitle": "HR Executive",
+        "email": "hr@techintact.com",
+        "phone": "+919898123456",
+        "whatsapp": "+919898123456",
+        "linkedin": "https://linkedin.com/company/techintact"
+      },
+      "job": {
+        "jobUrl": "https://techintact.com/careers",
+        "source": "LinkedIn Jobs",
+        "location": "Ahmedabad",
+        "workMode": "Hybrid",
+        "employmentType": "Full-Time",
+        "experienceRequired": "1-2 years",
+        "requirements": ["React.js", "Redux Toolkit", "Ant Design", "Tailwind CSS", "JavaScript"]
+      },
+      "email": {
+        "subject": "Application for React Developer – Jeny Pansuriya",
+        "body": "Dear Pooja,\n\nI am writing to express my interest in the React Developer opening at TechIntact.\n\nI specialize in responsive frontend architectures using React, state management, and modern component systems. I look forward to the possibility of discussing this opportunity.\n\nBest regards,\nJeny Pansuriya",
+        "status": "not_sent",
+        "sentAt": null
+      },
+      "whatsapp": {
+        "message": "Hi Pooja, I'm Jeny Pansuriya, a React / Frontend Developer. I came across TechIntact's opening for React Developer and wanted to share my portfolio: http://jenypansuriya.in. May I forward my CV for your review?",
+        "status": "not_sent",
+        "copiedAt": null,
+        "sentAt": null
+      },
+      "linkedin": {
+        "profileUrl": "https://linkedin.com/company/techintact",
+        "message": "",
+        "status": "not_contacted"
+      },
+      "tracking": {
+        "status": "READY_TO_CONTACT",
+        "createdAt": "2026-09-25T14:05:00+05:30",
+        "lastContactedAt": null,
+        "nextFollowUpAt": null,
+        "followUpCount": 0,
+        "notes": "Contact verified on LinkedIn."
+      }
+    },
+    {
+      "id": "job_003",
+      "company": "Evoort Solutions",
+      "role": "Full Stack Developer",
+      "jobType": "specific_opening",
+      "contact": {
+        "hrName": "Recruitment Team",
+        "hrJobTitle": "HR Team",
+        "email": "careers@evoort.com",
+        "phone": "",
+        "whatsapp": "",
+        "linkedin": "https://linkedin.com/company/evoort"
+      },
+      "job": {
+        "jobUrl": "https://evoort.com/careers",
+        "source": "Company Career Page",
+        "location": "Ahmedabad",
+        "workMode": "Work From Office",
+        "employmentType": "Full-Time",
+        "experienceRequired": "2+ years",
+        "requirements": ["React", "Node.js", "MySQL", "AWS", "Express"]
+      },
+      "email": {
+        "subject": "Application for Full Stack Developer – Jeny Pansuriya",
+        "body": "Dear Hiring Team,\n\nI am pleased to submit my application for the Full Stack Developer role at Evoort Solutions.\n\nWith solid experience across both frontend React and backend Node.js architectures, I am eager to contribute to your engineering team.\n\nBest regards,\nJeny Pansuriya",
+        "status": "sent",
+        "sentAt": "2026-09-25T11:30:00+05:30"
+      },
+      "whatsapp": {
+        "message": "",
+        "status": "not_sent",
+        "copiedAt": null,
+        "sentAt": null
+      },
+      "linkedin": {
+        "profileUrl": "https://linkedin.com/company/evoort",
+        "message": "",
+        "status": "not_contacted"
+      },
+      "tracking": {
+        "status": "EMAIL_SENT",
+        "createdAt": "2026-09-25T10:00:00+05:30",
+        "lastContactedAt": "2026-09-25T11:30:00+05:30",
+        "nextFollowUpAt": "2026-09-28T10:00:00+05:30",
+        "followUpCount": 0,
+        "notes": "Application sent via email. Follow up due on Monday."
+      }
+    },
+    {
+      "id": "job_004",
+      "company": "Saturncube Technologies",
+      "role": "Full Stack Developer",
+      "jobType": "specific_opening",
+      "contact": {
+        "hrName": "Sneha Joshi",
+        "hrJobTitle": "HR Manager",
+        "email": "hr@saturncube.com",
+        "phone": "",
+        "whatsapp": "",
+        "linkedin": "https://linkedin.com/company/saturncube"
+      },
+      "job": {
+        "jobUrl": "https://saturncube.com/jobs",
+        "source": "Naukri",
+        "location": "Ahmedabad",
+        "workMode": "Work From Office",
+        "employmentType": "Full-Time",
+        "experienceRequired": "1-3 years",
+        "requirements": ["React", "Node.js", "Next.js", "MongoDB"]
+      },
+      "email": {
+        "subject": "Application for Full Stack Developer – Jeny Pansuriya",
+        "body": "Dear Sneha,\n\nI am writing to apply for the Full Stack Developer position at Saturncube Technologies.\n\nI would be excited to discuss how my hands-on background in React and Node.js can help deliver value to your ongoing client projects.\n\nBest regards,\nJeny Pansuriya",
+        "status": "not_sent",
+        "sentAt": null
+      },
+      "whatsapp": {
+        "message": "",
+        "status": "not_sent",
+        "copiedAt": null,
+        "sentAt": null
+      },
+      "linkedin": {
+        "profileUrl": "https://linkedin.com/company/saturncube",
+        "message": "",
+        "status": "not_contacted"
+      },
+      "tracking": {
+        "status": "READY_TO_CONTACT",
+        "createdAt": "2026-09-25T12:00:00+05:30",
+        "lastContactedAt": null,
+        "nextFollowUpAt": null,
+        "followUpCount": 0,
+        "notes": ""
+      }
+    }
+  ]
+}

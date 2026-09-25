@@ -71,7 +71,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server helper
-export async function startServer(port = process.env.PORT || 5001, host = process.env.HOST || '127.0.0.1') {
+export async function startServer(port = process.env.PORT || 5080, host = process.env.HOST || '127.0.0.1') {
   try {
     await connectDB();
     await queueManager.recoverOrphanedJobs();
