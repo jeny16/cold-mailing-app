@@ -35,7 +35,7 @@ const EmailLogSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['QUEUED', 'SENDING', 'SENT', 'FAILED', 'SKIPPED'],
+      enum: ['QUEUED', 'SENDING', 'SENT', 'FAILED', 'SKIPPED', 'BOUNCED'],
       default: 'QUEUED',
       index: true,
     },

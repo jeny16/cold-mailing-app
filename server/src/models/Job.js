@@ -168,7 +168,7 @@ const JobSchema = new mongoose.Schema(
       },
       status: {
         type: String,
-        enum: ['not_sent', 'queued', 'sending', 'sent', 'failed'],
+        enum: ['not_sent', 'queued', 'sending', 'sent', 'failed', 'bounced'],
         default: 'not_sent',
         index: true,
       },
@@ -312,6 +312,9 @@ const JobSchema = new mongoose.Schema(
         'SENT',
         'FAILED',
         'SKIPPED',
+        // Bounce / Invalid email tracking
+        'BOUNCED',
+        'INVALID_EMAIL',
       ],
       default: 'NEW',
       index: true,

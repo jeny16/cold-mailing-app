@@ -13,6 +13,8 @@ import {
   Input,
   message,
   Tabs,
+  Checkbox,
+  Tooltip,
 } from 'antd';
 import {
   InboxOutlined,
@@ -22,6 +24,8 @@ import {
   WarningOutlined,
   CloseCircleOutlined,
   FileTextOutlined,
+  PlusCircleOutlined,
+  FilterOutlined,
 } from '@ant-design/icons';
 import { ImportAPI } from '../services/api';
 
@@ -34,6 +38,8 @@ export function ImportJobs({ onNavigateToReview }) {
   const [loading, setLoading] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [directLoading, setDirectLoading] = useState(false);
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
+  const [activeButtonMode, setActiveButtonMode] = useState('skip'); // 'skip' or 'all'
 
   // Import Summary Modal
   const [summaryModalVisible, setSummaryModalVisible] = useState(false);
@@ -60,9 +66,15 @@ export function ImportJobs({ onNavigateToReview }) {
     formData.append('file', file);
 
     try {
-      const res = await ImportAPI.uploadFile(formData);
+      const res = await ImportAPI.uploadFile(formData, { skipDuplicates });
       onSuccess(res, file);
-      message.success(`File "${file.name}" uploaded and parsed`);
+      const newJobs = res.summary?.newJobs || 0;
+      const skipped = res.summary?.duplicatesSkipped || 0;
+      message.success(
+        skipDuplicates
+          ? `File processed: ${newJobs} new record(s) imported, ${skipped} duplicate(s) skipped`
+          : `File "${file.name}" uploaded and parsed (${newJobs} new, ${res.summary?.duplicates || 0} duplicates included)`
+      );
       setImportSummary({
         filename: file.name,
         ...res.summary,
@@ -76,7 +88,7 @@ export function ImportJobs({ onNavigateToReview }) {
     }
   };
 
-  const handleDirectPaste = async () => {
+  const handleDirectPaste = async (overrideSkipDuplicates = skipDuplicates) => {
     if (!jsonText.trim()) {
       message.warning('Please paste a JSON string first');
       return;
@@ -92,8 +104,15 @@ export function ImportJobs({ onNavigateToReview }) {
 
     try {
       setDirectLoading(true);
-      const res = await ImportAPI.directImport(parsed);
-      message.success('JSON imported successfully');
+      setActiveButtonMode(overrideSkipDuplicates ? 'skip' : 'all');
+      const res = await ImportAPI.directImport(parsed, { skipDuplicates: overrideSkipDuplicates });
+      const newJobs = res.summary?.newJobs || 0;
+      const skipped = res.summary?.duplicatesSkipped || 0;
+      message.success(
+        overrideSkipDuplicates
+          ? `Imported ${newJobs} new job(s). ${skipped} existing duplicate(s) were safely skipped.`
+          : `Imported ${res.summary?.valid || 0} job(s) including duplicates.`
+      );
       setImportSummary({
         filename: 'Direct Paste Import',
         ...res.summary,
@@ -209,6 +228,25 @@ export function ImportJobs({ onNavigateToReview }) {
               ),
               children: (
                 <div style={{ padding: '16px 0' }}>
+                  <div
+                    style={{
+                      marginBottom: 16,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                    }}
+                  >
+                    <Text type="secondary">Upload your AI-generated JSON jobs file</Text>
+                    <Checkbox
+                      checked={skipDuplicates}
+                      onChange={(e) => setSkipDuplicates(e.target.checked)}
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      Skip duplicates (import only new records)
+                    </Checkbox>
+                  </div>
                   <Dragger
                     name="file"
                     multiple={false}
@@ -224,7 +262,7 @@ export function ImportJobs({ onNavigateToReview }) {
                       Click or drag a .json file to this area to import
                     </p>
                     <p className="ant-upload-hint" style={{ color: '#64748b' }}>
-                      Accepts normalized JSON with a <code>jobs</code> array.
+                      Accepts normalized JSON with a <code>jobs</code> array. {skipDuplicates ? '(Only new records will be saved)' : '(All records including duplicates will be saved)'}
                     </p>
                   </Dragger>
                 </div>
@@ -246,14 +284,43 @@ export function ImportJobs({ onNavigateToReview }) {
                     onChange={(e) => setJsonText(e.target.value)}
                     style={{ fontFamily: 'monospace', fontSize: 13 }}
                   />
-                  <div style={{ marginTop: 12, textAlign: 'right' }}>
-                    <Button
-                      type="primary"
-                      onClick={handleDirectPaste}
-                      loading={directLoading}
+                  <div
+                    style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                    }}
+                  >
+                    <Checkbox
+                      checked={skipDuplicates}
+                      onChange={(e) => setSkipDuplicates(e.target.checked)}
+                      style={{ fontSize: 13, fontWeight: 500 }}
                     >
-                      Import Pasted JSON
-                    </Button>
+                      Skip duplicates (import only new records)
+                    </Checkbox>
+
+                    <Space wrap>
+                      <Button
+                        onClick={() => handleDirectPaste(false)}
+                        loading={directLoading && activeButtonMode === 'all'}
+                        disabled={directLoading}
+                      >
+                        Import All (Include Duplicates)
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<PlusCircleOutlined />}
+                        onClick={() => handleDirectPaste(true)}
+                        loading={directLoading && activeButtonMode === 'skip'}
+                        disabled={directLoading}
+                        style={{ fontWeight: 600 }}
+                      >
+                        Import Only New Records
+                      </Button>
+                    </Space>
                   </div>
                 </div>
               ),
@@ -307,9 +374,26 @@ export function ImportJobs({ onNavigateToReview }) {
               showIcon
               message={`Processed: ${importSummary.filename}`}
               description={
-                importSummary.newJobs > 0
-                  ? `Successfully imported ${importSummary.newJobs} new job opportunity(s).`
-                  : 'Import processed.'
+                <div>
+                  {importSummary.newJobs > 0 && (
+                    <div>
+                      Successfully imported <strong>{importSummary.newJobs}</strong> new job opportunity(s).
+                    </div>
+                  )}
+                  {importSummary.duplicatesSkipped > 0 && (
+                    <div style={{ color: '#b45309', marginTop: 4 }}>
+                      • <strong>{importSummary.duplicatesSkipped}</strong> existing duplicate(s) were safely skipped (not re-imported).
+                    </div>
+                  )}
+                  {importSummary.newJobs === 0 && importSummary.duplicatesSkipped > 0 && (
+                    <div style={{ color: '#4b5563', marginTop: 2 }}>
+                      All valid records in this batch already exist in CRM.
+                    </div>
+                  )}
+                  {importSummary.newJobs === 0 && !importSummary.duplicatesSkipped && (
+                    <div>Import processed.</div>
+                  )}
+                </div>
               }
               style={{ marginBottom: 16 }}
             />
@@ -329,9 +413,20 @@ export function ImportJobs({ onNavigateToReview }) {
                   {importSummary.newJobs}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Duplicates / Existing">
-                <Tag color="orange" style={{ fontSize: 14 }}>
-                  {importSummary.duplicates || importSummary.existing || 0}
+              <Descriptions.Item
+                label={
+                  importSummary.duplicatesSkipped > 0
+                    ? 'Duplicates Skipped'
+                    : 'Duplicates / Existing'
+                }
+              >
+                <Tag
+                  color={importSummary.duplicatesSkipped > 0 ? 'gold' : 'orange'}
+                  style={{ fontSize: 14, fontWeight: 600 }}
+                >
+                  {importSummary.duplicatesSkipped > 0
+                    ? `${importSummary.duplicatesSkipped} (Skipped)`
+                    : importSummary.duplicates || importSummary.existing || 0}
                 </Tag>
               </Descriptions.Item>
 

@@ -33,6 +33,29 @@ import { EditJobModal } from '../components/EditJobModal';
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+const getCompanyInitials = (name) => {
+  if (!name) return 'CO';
+  const clean = name.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const words = clean.split(/\s+/);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+};
+
+const getAvatarGradient = (name) => {
+  const gradients = [
+    'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    'linear-gradient(135deg, #059669 0%, #047857 100%)',
+    'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+    'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+    'linear-gradient(135deg, #db2777 0%, #be185d 100%)',
+    'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+  ];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash += name.charCodeAt(i);
+  return gradients[Math.abs(hash) % gradients.length];
+};
+
+
 export function JobReview({ onSendTestTrigger }) {
   const [jobs, setJobs] = useState([]);
   const [total, setTotal] = useState(0);
@@ -40,7 +63,7 @@ export function JobReview({ onSendTestTrigger }) {
 
   // Filters & Pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(100);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -192,20 +215,31 @@ export function JobReview({ onSendTestTrigger }) {
       dataIndex: 'company',
       key: 'company',
       sorter: (a, b) => a.company.localeCompare(b.company),
-      render: (text, record) => (
-        <Space orientation="vertical" size={2}>
-          <a onClick={() => openDetail(record)} style={{ fontWeight: 600 }}>
-            {text}
-          </a>
-          {record.isDuplicate && (
-            <Tooltip title={record.duplicateReason || 'Potential duplicate contact/listing'}>
-              <Tag color="warning" icon={<WarningOutlined />}>
-                Duplicate
-              </Tag>
-            </Tooltip>
-          )}
-        </Space>
-      ),
+      render: (text, record) => {
+        const initials = getCompanyInitials(text);
+        const bgGradient = getAvatarGradient(text);
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="company-avatar" style={{ background: bgGradient, width: 32, height: 32, fontSize: 12 }}>
+              {initials}
+            </div>
+            <div>
+              <a onClick={() => openDetail(record)} style={{ fontWeight: 700, color: '#0f172a' }}>
+                {text}
+              </a>
+              {record.isDuplicate && (
+                <div style={{ marginTop: 2 }}>
+                  <Tooltip title={record.duplicateReason || 'Potential duplicate contact/listing'}>
+                    <Tag color="warning" icon={<WarningOutlined />} style={{ fontSize: 11, padding: '0 5px' }}>
+                      Duplicate
+                    </Tag>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       title: 'Role',
@@ -261,18 +295,18 @@ export function JobReview({ onSendTestTrigger }) {
       key: 'status',
       render: (status) => {
         const color =
-          status === 'SENT'
+          status === 'SENT' || status === 'EMAIL_SENT'
             ? 'green'
             : status === 'APPROVED'
             ? 'blue'
             : status === 'QUEUED'
             ? 'cyan'
-            : status === 'FAILED'
+            : status === 'FAILED' || status === 'BOUNCED'
             ? 'red'
             : status === 'SKIPPED'
             ? 'default'
             : 'orange';
-        return <Tag color={color}>{status}</Tag>;
+        return <Tag color={color}>{status === 'BOUNCED' ? '⛔ BOUNCED' : status}</Tag>;
       },
     },
     {
@@ -340,21 +374,36 @@ export function JobReview({ onSendTestTrigger }) {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            Job Review & Approval
-          </Title>
-          <Text type="secondary">
-            Inspect imported jobs, review AI details, make corrections, and approve listings for the sending queue.
-          </Text>
-        </div>
+      <div className="crm-header-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h1 className="crm-title">Job Review & Batch Approval</h1>
+              <span
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  color: '#2563eb',
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                {total} Records
+              </span>
+            </div>
+            <p className="crm-subtitle">
+              Inspect scraped prospects, verify HR contacts, customize personalized drafts, and approve for outbound queue.
+            </p>
+          </div>
 
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchJobs}>
-            Refresh
-          </Button>
-        </Space>
+          <Space wrap size={10}>
+            <Button icon={<ReloadOutlined />} onClick={fetchJobs} style={{ fontWeight: 600 }}>
+              Refresh
+            </Button>
+          </Space>
+        </div>
       </div>
 
       <Card style={{ marginBottom: 16, borderRadius: 12 }}>
@@ -394,6 +443,7 @@ export function JobReview({ onSendTestTrigger }) {
               <Option value="APPROVED">Approved</Option>
               <Option value="QUEUED">Queued</Option>
               <Option value="SENT">Sent</Option>
+              <Option value="BOUNCED">⛔ Bounced</Option>
               <Option value="FAILED">Failed</Option>
               <Option value="SKIPPED">Skipped</Option>
             </Select>

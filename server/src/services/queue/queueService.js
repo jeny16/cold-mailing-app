@@ -227,6 +227,15 @@ class QueueManager {
       });
     }
 
+    // Safety guard: do not send to known bounced addresses
+    if (contact.status === 'BOUNCED' || job.status === 'BOUNCED' || job.contactVerification?.status === 'invalid') {
+      logger.warn({ jobId: job._id, email: normEmail }, '[Queue] Skipping send to known BOUNCED/invalid contact');
+      job.status = 'SKIPPED';
+      job.lastError = 'Skipped: Recipient email is marked as BOUNCED / invalid';
+      await job.save();
+      return { skipped: true, reason: 'Recipient is marked as BOUNCED' };
+    }
+
     // Render personalized email
     const { subject, htmlBody, textBody } = personalizeEmail(job, settings);
 

@@ -9,7 +9,13 @@ import {
   generateWhatsAppUrl,
 } from '../services/personalization/templateEngine.js';
 import { sendEmail } from '../services/mail/mailService.js';
-import { normalizeEmail, generateJobKey, checkDuplicate } from '../services/duplicate/duplicateDetector.js';
+import {
+  normalizeEmail,
+  generateJobKey,
+  checkDuplicate,
+  cleanupDuplicates,
+  getDuplicateStats,
+} from '../services/duplicate/duplicateDetector.js';
 import { validateSingleJob } from '../validators/jobValidator.js';
 import logger from '../config/logger.js';
 
@@ -79,6 +85,12 @@ export async function getJobs(req, res) {
         query.status = 'REPLIED';
       } else if (quickFilter === 'interviews') {
         query.status = 'INTERVIEW';
+      } else if (quickFilter === 'bounced') {
+        query.$or = [
+          { status: 'BOUNCED' },
+          { 'email.status': 'bounced' },
+          { 'contactVerification.status': 'invalid' },
+        ];
       }
     }
 
@@ -653,6 +665,19 @@ export async function updateJobStatus(req, res) {
       job.tracking.lastContactedAt = new Date();
     }
 
+    if (status === 'BOUNCED') {
+      if (!job.email) job.email = {};
+      job.email.status = 'bounced';
+      job.contactVerification = {
+        status: 'invalid',
+        reason: notes || 'Marked as BOUNCED',
+      };
+      const normEmail = (job.contact?.email || job.hrEmail || '').trim().toLowerCase();
+      if (normEmail) {
+        await Contact.updateOne({ email: normEmail }, { $set: { status: 'BOUNCED' } });
+      }
+    }
+
     if (!job.timeline) job.timeline = [];
     job.timeline.push({
       action: 'STATUS_CHANGED',
@@ -832,6 +857,107 @@ export async function previewEmail(req, res) {
   }
 }
 
+/**
+ * Triggers duplicate purge across the CRM jobs collection.
+ */
+export async function cleanupDuplicatesController(req, res) {
+  try {
+    const result = await cleanupDuplicates();
+    res.json(result);
+  } catch (error) {
+    logger.error({ error: error.message }, '[Jobs] Error cleaning duplicates');
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Returns duplicate statistics for UI badges.
+ */
+export async function getDuplicateStatsController(req, res) {
+  try {
+    const stats = await getDuplicateStats();
+    res.json({ success: true, ...stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Mark a specific job as BOUNCED with error reasoning
+ */
+export async function markJobBounced(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason = '550 5.1.1 User does not exist - Address not found', rawError = '' } = req.body;
+
+    const job = await Job.findById(id);
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    const email = (job.contact?.email || job.hrEmail || '').trim().toLowerCase();
+    const bounceReason = reason || rawError || '550 5.1.1 User does not exist - Address not found';
+
+    job.status = 'BOUNCED';
+    if (!job.email) job.email = {};
+    job.email.status = 'bounced';
+    job.contactVerification = {
+      status: 'invalid',
+      reason: bounceReason,
+    };
+    job.lastError = bounceReason;
+
+    if (!job.tracking) job.tracking = {};
+    job.tracking.status = 'BOUNCED';
+    job.tracking.notes = (job.tracking.notes ? job.tracking.notes + '\n' : '') + `[BOUNCED] ${bounceReason}`;
+
+    if (!job.timeline) job.timeline = [];
+    job.timeline.push({
+      action: 'EMAIL_BOUNCED',
+      title: 'Email Delivery Failed / Bounced',
+      description: `Delivery failed to ${email || 'HR'}: ${bounceReason}`,
+      createdAt: new Date(),
+      meta: {
+        recipient: email,
+        reason: bounceReason,
+        rawError,
+      },
+    });
+
+    await job.save();
+
+    if (email) {
+      await Contact.updateOne(
+        { email },
+        {
+          $set: {
+            status: 'BOUNCED',
+            notes: `[${new Date().toISOString()}] Email bounced: ${bounceReason}`,
+          },
+        }
+      );
+
+      await EmailLog.updateMany(
+        { recipient: email },
+        {
+          $set: {
+            status: 'FAILED',
+            error: `Bounced: ${bounceReason}`,
+          },
+        }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Marked "${job.company}" as BOUNCED (${bounceReason})`,
+      job,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getJobs,
   getJobById,
@@ -850,4 +976,7 @@ export default {
   batchSkip,
   batchDelete,
   previewEmail,
+  cleanupDuplicatesController,
+  getDuplicateStatsController,
+  markJobBounced,
 };

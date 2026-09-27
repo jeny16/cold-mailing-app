@@ -15,16 +15,21 @@ import {
 const { Header } = Layout;
 
 export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, queueLoading }) {
+  const isRunning = queueStatus?.state === 'RUNNING';
+
   const menuItems = [
     { key: 'dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
     {
       key: 'review',
       icon: <CheckCircleOutlined />,
       label: (
-        <span>
-          Review Jobs{' '}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          Review Jobs
           {queueStatus?.reviewCount > 0 && (
-            <Badge count={queueStatus.reviewCount} style={{ backgroundColor: '#faad14' }} />
+            <Badge
+              count={queueStatus.reviewCount}
+              style={{ backgroundColor: '#f59e0b', fontSize: 11, fontWeight: 700 }}
+            />
           )}
         </span>
       ),
@@ -33,10 +38,13 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
       key: 'queue',
       icon: <ClockCircleOutlined />,
       label: (
-        <span>
-          Email Queue{' '}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          Email Queue
           {queueStatus?.queuedCount > 0 && (
-            <Badge count={queueStatus.queuedCount} style={{ backgroundColor: '#1890ff' }} />
+            <Badge
+              count={queueStatus.queuedCount}
+              style={{ backgroundColor: '#2563eb', fontSize: 11, fontWeight: 700 }}
+            />
           )}
         </span>
       ),
@@ -46,25 +54,25 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
 
-  const isRunning = queueStatus?.state === 'RUNNING';
-
   return (
     <Header
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: '#ffffff',
-        padding: '0 24px',
+        background: 'rgba(255, 255, 255, 0.94)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        padding: '0 28px',
         borderBottom: '1px solid #e2e8f0',
         position: 'sticky',
         top: 0,
         zIndex: 1000,
         height: '64px',
-        lineHeight: 'normal',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)',
       }}
     >
-      {/* Left: Brand Logo & Title */}
+      {/* Brand Logo & Title */}
       <div
         onClick={() => onSelectTab('dashboard')}
         style={{
@@ -73,36 +81,49 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
           alignItems: 'center',
           gap: '12px',
           flexShrink: 0,
-          marginRight: '20px',
+          marginRight: '24px',
         }}
       >
         <div
           style={{
             width: 38,
             height: 38,
-            borderRadius: 8,
-            background: 'linear-gradient(135deg, #1890ff 0%, #0050b3 100%)',
+            borderRadius: 10,
+            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'white',
-            fontSize: 20,
+            fontSize: 18,
+            boxShadow: '0 3px 10px rgba(37, 99, 235, 0.3)',
             flexShrink: 0,
           }}
         >
           <MailOutlined />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.2 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
-            JOB OUTREACH CRM
-          </span>
-          <span style={{ fontSize: 11, color: '#64748b', lineHeight: 1.2, marginTop: 2 }}>
-            Email &amp; WhatsApp Outreach System
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+              JOB OUTREACH CRM
+            </span>
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: isRunning ? '#10b981' : '#94a3b8',
+                display: 'inline-block',
+              }}
+              className={isRunning ? 'pulse-active' : ''}
+            />
+          </div>
+          <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500, lineHeight: 1.2, marginTop: 2 }}>
+            Multi-Channel Job Application System
           </span>
         </div>
       </div>
 
-      {/* Center: Main Horizontal Menu */}
+      {/* Main Navigation Menu */}
       <Menu
         mode="horizontal"
         selectedKeys={[activeTab]}
@@ -112,23 +133,52 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
           flex: 1,
           minWidth: 0,
           borderBottom: 'none',
+          background: 'transparent',
+          fontWeight: 600,
+          fontSize: '13.5px',
           lineHeight: '62px',
         }}
       />
 
-      {/* Right: Actions and Live Mode Tag */}
-      <Space size="middle" style={{ flexShrink: 0, marginLeft: '16px' }}>
+      {/* Mode Tag and Live Queue Toggle */}
+      <Space size="middle" style={{ flexShrink: 0, marginLeft: '20px' }}>
         {queueStatus?.dryRun ? (
-          <Tooltip title="DRY RUN active: Emails are logged without reaching external SMTP. You can toggle this in Settings.">
-            <Tag color="orange" style={{ fontWeight: 600, padding: '4px 8px' }}>
-              🛡️ DRY RUN MODE
-            </Tag>
+          <Tooltip title="DRY RUN active: Emails are logged safely without reaching external mail servers. Toggle in Settings.">
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 8,
+                background: '#fffbeb',
+                border: '1px solid #fef3c7',
+                color: '#b45309',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              🛡️ DRY RUN
+            </span>
           </Tooltip>
         ) : (
-          <Tooltip title="Live SMTP active: Real emails will be dispatched when queue is running">
-            <Tag color="green" style={{ fontWeight: 600, padding: '4px 8px' }}>
+          <Tooltip title="Live SMTP active: Real emails will be dispatched to employers when queue is active.">
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 8,
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#15803d',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
               🚀 LIVE SMTP
-            </Tag>
+            </span>
           </Tooltip>
         )}
 
@@ -138,9 +188,13 @@ export function Navbar({ activeTab, onSelectTab, queueStatus, onToggleQueue, que
           icon={isRunning ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
           onClick={onToggleQueue}
           loading={queueLoading}
-          style={{ fontWeight: 600 }}
+          style={{
+            fontWeight: 700,
+            borderRadius: 8,
+            boxShadow: isRunning ? 'none' : '0 2px 8px rgba(37, 99, 235, 0.25)',
+          }}
         >
-          {isRunning ? 'PAUSE SENDING' : 'START SENDING'}
+          {isRunning ? 'PAUSE QUEUE' : 'START QUEUE'}
         </Button>
       </Space>
     </Header>

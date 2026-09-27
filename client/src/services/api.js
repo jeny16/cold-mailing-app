@@ -29,6 +29,9 @@ export const JobsAPI = {
   batchSkip: (ids) => api.post('/jobs/batch-skip', { ids }).then((res) => res.data),
   batchDelete: (ids) => api.post('/jobs/batch-delete', { ids }).then((res) => res.data),
   previewEmail: (id) => api.get(`/jobs/${id}/preview-email`).then((res) => res.data),
+  cleanupDuplicates: () => api.post('/jobs/cleanup-duplicates').then((res) => res.data),
+  getDuplicateStats: () => api.get('/jobs/duplicate-stats').then((res) => res.data),
+  markBounced: (id, data = {}) => api.post(`/jobs/${id}/mark-bounced`, data).then((res) => res.data),
 };
 
 export const QueueAPI = {
@@ -43,6 +46,13 @@ export const EmailsAPI = {
   getEmails: (params) => api.get('/emails', { params }).then((res) => res.data),
   getEmailById: (id) => api.get(`/emails/${id}`).then((res) => res.data),
   sendTestEmail: (data) => api.post('/emails/test', data).then((res) => res.data),
+  checkReplies: () => api.post('/emails/check-replies').then((res) => res.data),
+  simulateReply: (data = {}) => api.post('/emails/simulate-reply', data).then((res) => res.data),
+  simulateBounce: (data = {}) => api.post('/emails/simulate-bounce', data).then((res) => res.data),
+  markBounced: (data) => api.post('/emails/mark-bounced', data).then((res) => res.data),
+  validateAddress: (data) => api.post('/emails/validate-address', data).then((res) => res.data),
+  testImap: (data = {}) => api.post('/emails/test-imap', data).then((res) => res.data),
+  getImapStatus: () => api.get('/emails/imap-status').then((res) => res.data),
 };
 
 export const SettingsAPI = {
@@ -57,13 +67,19 @@ export const SettingsAPI = {
 };
 
 export const ImportAPI = {
-  uploadFile: (formData) =>
+  uploadFile: (formData, { skipDuplicates = false } = {}) =>
     api
       .post('/imports/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        params: { skipDuplicates },
       })
       .then((res) => res.data),
-  directImport: (data) => api.post('/imports/direct', data).then((res) => res.data),
+  directImport: (data, { skipDuplicates = false } = {}) =>
+    api
+      .post('/imports/direct', data, {
+        params: { skipDuplicates },
+      })
+      .then((res) => res.data),
   getImports: (params) => api.get('/imports', { params }).then((res) => res.data),
 };
 

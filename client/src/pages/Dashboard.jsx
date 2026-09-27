@@ -17,6 +17,7 @@ import {
   Radio,
   Badge,
   message,
+  Modal,
 } from 'antd';
 import {
   FileTextOutlined,
@@ -38,9 +39,15 @@ import {
   EyeOutlined,
   SearchOutlined,
   ReloadOutlined,
+  DeleteOutlined,
+  SyncOutlined,
+  ExclamationCircleOutlined,
+  ThunderboltOutlined,
+  UserOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { StatsAPI, QueueAPI, JobsAPI } from '../services/api';
+import { StatsAPI, QueueAPI, JobsAPI, EmailsAPI } from '../services/api';
 import { WhatsAppModal } from '../components/WhatsAppModal';
 import { SendEmailModal } from '../components/SendEmailModal';
 import { AddCompanyModal } from '../components/AddCompanyModal';
@@ -50,6 +57,29 @@ import { EditJobModal } from '../components/EditJobModal';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+
+// Dynamic company monogram
+const getCompanyInitials = (name) => {
+  if (!name) return 'CO';
+  const clean = name.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const words = clean.split(/\s+/);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+};
+
+const getAvatarGradient = (name) => {
+  const gradients = [
+    'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+    'linear-gradient(135deg, #059669 0%, #047857 100%)',
+    'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+    'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+    'linear-gradient(135deg, #db2777 0%, #be185d 100%)',
+    'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+  ];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash += name.charCodeAt(i);
+  return gradients[Math.abs(hash) % gradients.length];
+};
 
 export function Dashboard({ onNavigate, onTriggerTestModal }) {
   const [statsData, setStatsData] = useState(null);
@@ -61,7 +91,7 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [totalJobs, setTotalJobs] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(100);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [quickFilter, setQuickFilter] = useState('all');
@@ -75,12 +105,143 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
 
+  // Duplicate cleanup & IMAP state
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
+  const [checkingReplies, setCheckingReplies] = useState(false);
+
   const fetchStats = async () => {
     try {
       const res = await StatsAPI.getStats();
       setStatsData(res);
     } catch (err) {
       console.error('Error fetching stats:', err);
+    }
+  };
+
+  const fetchDuplicateStats = async () => {
+    try {
+      const res = await JobsAPI.getDuplicateStats();
+      setDuplicateCount(res.totalDuplicates || 0);
+    } catch (err) {
+      console.error('Error fetching duplicate stats:', err);
+    }
+  };
+
+  const handleCleanupDuplicates = () => {
+    Modal.confirm({
+      title: 'Clean Up Duplicate Records?',
+      icon: <ExclamationCircleOutlined style={{ color: '#ef4444' }} />,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ color: '#475569', fontSize: 13 }}>
+            This will scan your CRM database, retain the most active and complete master record for each opportunity, and permanently remove redundant duplicate entries.
+          </p>
+          {duplicateCount > 0 ? (
+            <p style={{ fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '6px 12px', borderRadius: 6 }}>
+              Detected duplicates to remove: {duplicateCount}
+            </p>
+          ) : (
+            <p style={{ color: '#64748b' }}>Checking and purging any duplicate entries...</p>
+          )}
+        </div>
+      ),
+      okText: 'Clean Up Duplicates Now',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setCleaningDuplicates(true);
+          const res = await JobsAPI.cleanupDuplicates();
+          if (res.deletedCount > 0) {
+            message.success(`Successfully removed ${res.deletedCount} duplicate record(s)!`);
+          } else {
+            message.info('No duplicate records found to clean up.');
+          }
+          fetchJobs();
+          fetchStats();
+          fetchDuplicateStats();
+        } catch (err) {
+          message.error(err.response?.data?.error || 'Failed to clean duplicates');
+        } finally {
+          setCleaningDuplicates(false);
+        }
+      },
+    });
+  };
+
+  const handleCheckReplies = async () => {
+    try {
+      setCheckingReplies(true);
+      const res = await EmailsAPI.checkReplies();
+      const repliesCount = res.repliesMatched || 0;
+      const bouncesCount = res.bouncesMatched || 0;
+
+      if (repliesCount > 0 || bouncesCount > 0) {
+        const parts = [];
+        if (repliesCount > 0) parts.push(`🎉 ${repliesCount} new HR reply(s)`);
+        if (bouncesCount > 0) parts.push(`⛔ ${bouncesCount} bounced email(s)`);
+        message.success(`${parts.join(' & ')} detected! CRM statuses updated.`);
+        fetchJobs();
+        fetchStats();
+      } else if (res.configured === false) {
+        Modal.info({
+          title: 'IMAP Reply & Bounce Tracking',
+          content: (
+            <div style={{ marginTop: 8 }}>
+              <p style={{ color: '#475569' }}>{res.message}</p>
+              <p style={{ color: '#64748b', fontSize: 13 }}>
+                To track replies and delivery failures live from your email inbox (Gmail, Outlook, Zoho), go to <strong>Settings</strong> and enter your email address and App Password.
+              </p>
+              <Space wrap style={{ marginTop: 12 }}>
+                <Button
+                  type="primary"
+                  icon={<ThunderboltOutlined />}
+                  onClick={async () => {
+                    Modal.destroyAll();
+                    try {
+                      const simRes = await EmailsAPI.simulateReply();
+                      message.success(simRes.message || 'Simulated reply generated!');
+                      fetchJobs();
+                      fetchStats();
+                    } catch (simErr) {
+                      message.error(simErr.response?.data?.error || 'Simulation failed');
+                    }
+                  }}
+                >
+                  Simulate HR Reply
+                </Button>
+                <Button
+                  danger
+                  icon={<CloseCircleOutlined />}
+                  onClick={async () => {
+                    Modal.destroyAll();
+                    try {
+                      const simRes = await EmailsAPI.simulateBounce({
+                        bouncedEmail: 'dev@ansorbit.com',
+                        reason: '550 5.1.1 User does not exist - Address not found',
+                      });
+                      message.success(simRes.message || 'Simulated bounce generated!');
+                      fetchJobs();
+                      fetchStats();
+                    } catch (simErr) {
+                      message.error(simErr.response?.data?.error || 'Bounce simulation failed');
+                    }
+                  }}
+                >
+                  Simulate Bounced Email
+                </Button>
+              </Space>
+            </div>
+          ),
+        });
+      } else {
+        message.info(res.message || 'Checked inbox: No new HR replies or bounces detected.');
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to check replies via IMAP');
+    } finally {
+      setCheckingReplies(false);
     }
   };
 
@@ -108,10 +269,12 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
   const refreshAll = () => {
     fetchStats();
     fetchJobs();
+    fetchDuplicateStats();
   };
 
   useEffect(() => {
     fetchStats();
+    fetchDuplicateStats();
     const interval = setInterval(fetchStats, 6000);
     return () => clearInterval(interval);
   }, []);
@@ -150,54 +313,96 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
   const dailyLimit = stats.dailyLimit || 50;
   const progressPercent = Math.min(100, Math.round((sentToday / dailyLimit) * 100));
 
-  // Table Columns exactly matching the user's specification
+  // Table Columns
   const columns = [
     {
       title: 'Company',
       dataIndex: 'company',
       key: 'company',
       sorter: (a, b) => a.company.localeCompare(b.company),
-      render: (company, record) => (
-        <div>
-          <a
-            onClick={() => {
-              setActiveJob(record);
-              setDetailModalVisible(true);
-            }}
-            style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}
-          >
-            {company}
-          </a>
-          <div style={{ marginTop: 2 }}>
-            <Space size={4}>
-              <Tag style={{ fontSize: 11 }}>
-                {record.job?.location || record.location || 'Ahmedabad'}
-              </Tag>
-              {record.remote && <Tag color="purple" style={{ fontSize: 11 }}>Remote</Tag>}
-              {record.isDuplicate && (
-                <Tooltip title={record.duplicateReason || 'Potential duplicate contact'}>
-                  <Tag color="warning" icon={<WarningOutlined />} style={{ fontSize: 11 }}>
-                    Duplicate
+      render: (company, record) => {
+        const initials = getCompanyInitials(company);
+        const bgGradient = getAvatarGradient(company);
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              className="company-avatar"
+              style={{ background: bgGradient }}
+              title={company}
+            >
+              {initials}
+            </div>
+            <div>
+              <a
+                onClick={() => {
+                  setActiveJob(record);
+                  setDetailModalVisible(true);
+                }}
+                style={{
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: '#0f172a',
+                  lineHeight: 1.3,
+                  display: 'inline-block',
+                }}
+              >
+                {company}
+              </a>
+              <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <Tag
+                  style={{
+                    fontSize: 11,
+                    padding: '0 6px',
+                    borderRadius: 4,
+                    background: '#f1f5f9',
+                    border: '1px solid #e2e8f0',
+                    color: '#475569',
+                  }}
+                >
+                  {record.job?.location || record.location || 'Ahmedabad'}
+                </Tag>
+                {record.remote && (
+                  <Tag
+                    color="purple"
+                    style={{ fontSize: 11, padding: '0 6px', borderRadius: 4 }}
+                  >
+                    Remote
                   </Tag>
-                </Tooltip>
-              )}
-            </Space>
+                )}
+                {record.isDuplicate && (
+                  <Tooltip title={record.duplicateReason || 'Potential duplicate contact'}>
+                    <Tag
+                      color="warning"
+                      icon={<WarningOutlined />}
+                      style={{ fontSize: 11, padding: '0 6px', borderRadius: 4 }}
+                    >
+                      Duplicate
+                    </Tag>
+                  </Tooltip>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
-      title: 'Role',
+      title: 'Role & Contact',
       dataIndex: 'role',
       key: 'role',
-      render: (role, record) => (
-        <div>
-          <div style={{ fontWeight: 600, color: '#334155' }}>{role}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.contact?.hrName ? record.contact.hrName : record.hrName ? record.hrName : 'Hiring Team'}
-          </Text>
-        </div>
-      ),
+      render: (role, record) => {
+        const hrName = record.contact?.hrName || record.hrName;
+        return (
+          <div>
+            <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13.5 }}>{role}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: '#64748b', fontSize: 12 }}>
+              <UserOutlined style={{ fontSize: 11, color: '#94a3b8' }} />
+              <span>{hrName || 'Hiring Team'}</span>
+            </div>
+          </div>
+        );
+      },
     },
     {
       title: 'Email',
@@ -209,7 +414,7 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
         const hasEmail = Boolean(record.contact?.email || record.hrEmail);
 
         if (!hasEmail) {
-          return <span style={{ color: '#94a3b8' }}>—</span>;
+          return <span style={{ color: '#cbd5e1' }}>—</span>;
         }
 
         if (isSent) {
@@ -217,24 +422,111 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
             <Tooltip
               title={`Sent on ${record.email?.sentAt ? dayjs(record.email.sentAt).format('DD MMM YYYY, hh:mm A') : 'Recorded'}`}
             >
-              <Tag color="green" icon={<CheckCircleOutlined />}>
-                ✅ Sent
-              </Tag>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  background: '#ecfdf5',
+                  color: '#059669',
+                  border: '1px solid #a7f3d0',
+                  fontWeight: 600,
+                  fontSize: 12,
+                }}
+              >
+                <CheckCircleOutlined /> Sent
+              </span>
             </Tooltip>
           );
         }
 
         if (record.status === 'SENDING') {
-          return <Tag color="processing">⏳ Sending</Tag>;
+          return (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#eff6ff',
+                color: '#2563eb',
+                border: '1px solid #bfdbfe',
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              ⏳ Sending
+            </span>
+          );
+        }
+
+        if (record.status === 'BOUNCED' || emailStatus === 'bounced') {
+          return (
+            <Tooltip
+              title={`Delivery Failed: ${record.contactVerification?.reason || record.lastError || '550 5.1.1 User does not exist'}`}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  background: '#fef2f2',
+                  color: '#dc2626',
+                  border: '1px solid #fecaca',
+                  fontWeight: 600,
+                  fontSize: 12,
+                }}
+              >
+                <CloseCircleOutlined /> Bounced
+              </span>
+            </Tooltip>
+          );
         }
 
         if (emailStatus === 'failed' || record.status === 'FAILED') {
-          return <Tag color="red">❌ Failed</Tag>;
+          return (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#fef2f2',
+                color: '#dc2626',
+                border: '1px solid #fecaca',
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              ❌ Failed
+            </span>
+          );
         }
 
         return (
           <Tooltip title={`Ready to dispatch to ${record.contact?.email || record.hrEmail}`}>
-            <Tag color="default">⏳ Ready</Tag>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#f8fafc',
+                color: '#475569',
+                border: '1px solid #e2e8f0',
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              ⏳ Ready
+            </span>
           </Tooltip>
         );
       },
@@ -250,40 +542,77 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
         const phone = record.contact?.phone || record.whatsapp?.phone || '';
 
         if (!phone) {
-          return <span style={{ color: '#94a3b8' }}>—</span>;
+          return <span style={{ color: '#cbd5e1' }}>—</span>;
         }
 
         if (isSent) {
           return (
             <Tooltip title={`Sent manually on ${record.whatsapp?.sentAt ? dayjs(record.whatsapp.sentAt).format('DD MMM, hh:mm A') : 'Recorded'}`}>
-              <Tag color="geekblue" icon={<CheckCircleOutlined />}>
-                ✅ Sent
-              </Tag>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  background: '#f0fdf4',
+                  color: '#15803d',
+                  border: '1px solid #bbf7d0',
+                  fontWeight: 600,
+                  fontSize: 12,
+                }}
+              >
+                <CheckCircleOutlined /> Sent
+              </span>
             </Tooltip>
           );
         }
 
         if (isCopied) {
           return (
-            <Tag color="gold" icon={<ClockCircleOutlined />}>
-              💬 Copied
-            </Tag>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#fffbeb',
+                color: '#b45309',
+                border: '1px solid #fef3c7',
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              <ClockCircleOutlined /> Copied
+            </span>
           );
         }
 
         return (
           <Tooltip title={`Click to message ${phone}`}>
-            <Tag
-              color="green"
-              icon={<WhatsAppOutlined />}
-              style={{ cursor: 'pointer' }}
+            <span
               onClick={() => {
                 setActiveJob(record);
                 setWhatsAppModalVisible(true);
               }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#ecfdf5',
+                color: '#047857',
+                border: '1px solid #a7f3d0',
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
             >
-              📱 Ready
-            </Tag>
+              <WhatsAppOutlined /> Ready
+            </span>
           </Tooltip>
         );
       },
@@ -294,9 +623,19 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
       key: 'status',
       render: (status) => {
         const color = STATUS_COLORS[status] || 'default';
+        const isBounced = status === 'BOUNCED';
         return (
-          <Tag color={color} style={{ fontWeight: 600, borderRadius: 4 }}>
-            {status}
+          <Tag
+            color={color}
+            style={{
+              fontWeight: 700,
+              borderRadius: 6,
+              fontSize: 11.5,
+              padding: '2px 8px',
+              border: isBounced ? '1px solid #f87171' : undefined,
+            }}
+          >
+            {isBounced ? '⛔ BOUNCED' : status}
           </Tag>
         );
       },
@@ -316,8 +655,12 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
         if (isOverdue) {
           return (
             <Tooltip title={`Was due on ${due.format('DD MMM YYYY')}`}>
-              <Tag color="red" icon={<BellOutlined />}>
-                🔴 Overdue ({due.format('DD MMM')})
+              <Tag
+                color="error"
+                icon={<BellOutlined />}
+                style={{ fontWeight: 600, borderRadius: 6, fontSize: 11.5 }}
+              >
+                Overdue ({due.format('DD MMM')})
               </Tag>
             </Tooltip>
           );
@@ -325,14 +668,22 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
 
         if (isToday) {
           return (
-            <Tag color="orange" icon={<BellOutlined />}>
-              🟡 Due Today
+            <Tag
+              color="warning"
+              icon={<BellOutlined />}
+              style={{ fontWeight: 600, borderRadius: 6, fontSize: 11.5 }}
+            >
+              Due Today
             </Tag>
           );
         }
 
         return (
-          <Tag color="blue" icon={<BellOutlined />}>
+          <Tag
+            color="processing"
+            icon={<CalendarOutlined />}
+            style={{ fontWeight: 600, borderRadius: 6, fontSize: 11.5 }}
+          >
             {due.format('DD MMM')}
           </Tag>
         );
@@ -346,7 +697,7 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
         const linkedin = record.contact?.linkedin || record.linkedin?.profileUrl || '';
 
         return (
-          <Space size={6}>
+          <Space size={5}>
             <Tooltip title="Send Application Email">
               <Button
                 size="small"
@@ -356,37 +707,48 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
                   setActiveJob(record);
                   setSendEmailModalVisible(true);
                 }}
+                className="action-btn-clean"
+                style={{
+                  fontWeight: 600,
+                  fontSize: 12,
+                  boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
+                }}
               >
                 Email
               </Button>
             </Tooltip>
 
-            <Tooltip title="WhatsApp Outreach (Copy → Open → Send)">
+            <Tooltip title="WhatsApp Outreach">
               <Button
                 size="small"
                 icon={<WhatsAppOutlined />}
                 style={{
-                  color: phone ? '#128C7E' : '#94a3b8',
-                  borderColor: phone ? '#25D366' : '#e2e8f0',
+                  color: phone ? '#15803d' : '#94a3b8',
+                  borderColor: phone ? '#86efac' : '#e2e8f0',
+                  background: phone ? '#f0fdf4' : undefined,
+                  fontWeight: 600,
+                  fontSize: 12,
                 }}
                 disabled={!phone}
                 onClick={() => {
                   setActiveJob(record);
                   setWhatsAppModalVisible(true);
                 }}
+                className="action-btn-clean"
               >
                 WhatsApp
               </Button>
             </Tooltip>
 
             {linkedin && (
-              <Tooltip title="Open LinkedIn Profile">
+              <Tooltip title="LinkedIn Profile">
                 <Button
                   size="small"
                   icon={<LinkedinOutlined />}
                   href={linkedin.startsWith('http') ? linkedin : `https://${linkedin}`}
                   target="_blank"
-                  style={{ color: '#0a66c2' }}
+                  style={{ color: '#0a66c2', borderColor: '#bfdbfe' }}
+                  className="action-btn-clean"
                 />
               </Tooltip>
             )}
@@ -397,11 +759,13 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
                   size="small"
                   icon={<PhoneOutlined />}
                   href={`tel:${phone}`}
+                  style={{ color: '#059669', borderColor: '#a7f3d0' }}
+                  className="action-btn-clean"
                 />
               </Tooltip>
             )}
 
-            <Tooltip title="View CRM Details & Activity Timeline">
+            <Tooltip title="View Details & Activity Timeline">
               <Button
                 size="small"
                 icon={<EyeOutlined />}
@@ -409,8 +773,37 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
                   setActiveJob(record);
                   setDetailModalVisible(true);
                 }}
+                className="action-btn-clean"
               />
             </Tooltip>
+
+            {record.status !== 'BOUNCED' && (
+              <Tooltip title="Mark as Bounced / Invalid Email">
+                <Button
+                  size="small"
+                  danger
+                  icon={<CloseCircleOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    Modal.confirm({
+                      title: `Mark ${record.company} as Bounced?`,
+                      icon: <CloseCircleOutlined style={{ color: '#ef4444' }} />,
+                      content: `This will mark "${record.contact?.email || record.hrEmail}" as an invalid/bounced email address (550 User does not exist) and block further automated sends.`,
+                      okText: 'Mark Bounced',
+                      okType: 'danger',
+                      onOk: async () => {
+                        await JobsAPI.markBounced(record._id, {
+                          reason: '550 5.1.1 User does not exist - Address not found',
+                        });
+                        message.success(`Marked ${record.company} as BOUNCED`);
+                        refreshAll();
+                      },
+                    });
+                  }}
+                  className="action-btn-clean"
+                />
+              </Tooltip>
+            )}
           </Space>
         );
       },
@@ -419,45 +812,99 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
 
   return (
     <div>
-      {/* Header with Navigation and Quick Creation */}
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            Job Outreach CRM
-          </Title>
-          <Text type="secondary">
-            Personalized Job Outreach & Application Tracker (Separate Email & WhatsApp Outreach Management)
-          </Text>
+      {/* Sleek SaaS Header */}
+      <div className="crm-header-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h1 className="crm-title">Job Outreach CRM</h1>
+              <span
+                style={{
+                  background: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                {totalJobs} Prospects Active
+              </span>
+            </div>
+            <p className="crm-subtitle">
+              AI-Curated multi-channel candidate pipeline • Email, WhatsApp, and LinkedIn Outreach Management
+            </p>
+          </div>
+
+          <Space wrap size={8}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setAddCompanyModalVisible(true)}
+              style={{
+                fontWeight: 700,
+                background: '#16a34a',
+                borderColor: '#16a34a',
+                boxShadow: '0 2px 6px rgba(22, 163, 74, 0.3)',
+              }}
+            >
+              Add Company
+            </Button>
+
+            <Button
+              icon={<UploadOutlined />}
+              onClick={() => onNavigate('import')}
+              style={{ fontWeight: 600 }}
+            >
+              Import JSON
+            </Button>
+
+            <Button
+              icon={<AuditOutlined />}
+              onClick={() => onNavigate('review')}
+              style={{ fontWeight: 600 }}
+            >
+              Batch Review
+            </Button>
+
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleCleanupDuplicates}
+              loading={cleaningDuplicates}
+              style={{ fontWeight: 600 }}
+            >
+              Cleanup Duplicates {duplicateCount > 0 ? `(${duplicateCount})` : ''}
+            </Button>
+
+            <Button
+              icon={<SyncOutlined spin={checkingReplies} />}
+              onClick={handleCheckReplies}
+              loading={checkingReplies}
+              style={{
+                borderColor: '#c4b5fd',
+                color: '#7c3aed',
+                background: '#faf5ff',
+                fontWeight: 600,
+              }}
+              title="Check inbox via IMAP for incoming HR email replies and delivery bounces"
+            >
+              Check Replies (IMAP)
+            </Button>
+
+            <Button
+              type={isRunning ? 'default' : 'primary'}
+              danger={isRunning}
+              icon={isRunning ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={handleToggleQueue}
+              loading={queueLoading}
+              style={{ fontWeight: 700 }}
+            >
+              {isRunning ? 'PAUSE QUEUE' : 'START QUEUE'}
+            </Button>
+          </Space>
         </div>
-
-        <Space wrap>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setAddCompanyModalVisible(true)}
-            style={{ fontWeight: 600, background: '#16a34a', borderColor: '#16a34a' }}
-          >
-            Add Company
-          </Button>
-
-          <Button icon={<UploadOutlined />} onClick={() => onNavigate('import')}>
-            Import JSON
-          </Button>
-
-          <Button icon={<AuditOutlined />} onClick={() => onNavigate('review')}>
-            Batch Review
-          </Button>
-
-          <Button
-            type={isRunning ? 'default' : 'primary'}
-            danger={isRunning}
-            icon={isRunning ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-            onClick={handleToggleQueue}
-            loading={queueLoading}
-          >
-            {isRunning ? 'PAUSE QUEUE' : 'START QUEUE'}
-          </Button>
-        </Space>
       </div>
 
       {stats.dryRun && (
@@ -467,147 +914,204 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
           icon={<WarningOutlined />}
           message="DRY RUN Active"
           description="Emails sent via Queue or Direct Send will be logged in full detail but will NOT be dispatched to external SMTP servers. Toggle anytime in Settings."
-          style={{ marginBottom: 16, borderRadius: 8 }}
+          style={{ marginBottom: 18, borderRadius: 10, border: '1px solid #fef3c7' }}
         />
       )}
 
-      {/* Today's CRM Priorities Banner */}
-      <div style={{ marginBottom: 16 }}>
-        <Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#64748b' }}>
-          Today's Outreach Metrics
-        </Text>
-        <Row gutter={[12, 12]} style={{ marginTop: 6 }}>
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('followups_due')}
+      {/* Queue & Daily Send Status Mini Bar */}
+      <div className="queue-status-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: isRunning ? '#ecfdf5' : '#fffbeb',
+              border: isRunning ? '1px solid #a7f3d0' : '1px solid #fef3c7',
+              color: isRunning ? '#047857' : '#b45309',
+              fontWeight: 700,
+              fontSize: 12,
+            }}
+          >
+            <span
               style={{
-                borderLeft: quickFilter === 'followups_due' ? '4px solid #ef4444' : undefined,
-                background: quickFilter === 'followups_due' ? '#fef2f2' : undefined,
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: isRunning ? '#10b981' : '#f59e0b',
+                display: 'inline-block',
               }}
-            >
-              <Statistic
-                title="🔴 Follow-ups Due"
-                value={stats.followupsDue || 0}
-                valueStyle={{ color: '#ef4444', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
+              className={isRunning ? 'pulse-active' : ''}
+            />
+            Queue: {stats.queueState || 'IDLE'}
+          </span>
+          <Text style={{ fontSize: 13, color: '#475569' }}>
+            Approved: <strong>{stats.approved || 0}</strong> &nbsp;|&nbsp; Queued: <strong>{stats.queued || 0}</strong>
+          </Text>
+        </div>
 
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('whatsapp_pending')}
-              style={{
-                borderLeft: quickFilter === 'whatsapp_pending' ? '4px solid #f59e0b' : undefined,
-                background: quickFilter === 'whatsapp_pending' ? '#fffbeb' : undefined,
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 260 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 2 }}>
+              <span style={{ color: '#64748b' }}>Daily Send Limit</span>
+              <span style={{ fontWeight: 700, color: '#1e293b' }}>
+                {sentToday} / {dailyLimit} ({dailyLimit - sentToday} left)
+              </span>
+            </div>
+            <Progress
+              percent={progressPercent}
+              showInfo={false}
+              size="small"
+              strokeColor={{
+                '0%': '#2563eb',
+                '100%': progressPercent >= 100 ? '#ef4444' : '#10b981',
               }}
-            >
-              <Statistic
-                title="🟡 WhatsApp Pending"
-                value={stats.whatsappPending || 0}
-                valueStyle={{ color: '#f59e0b', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
+            />
+          </div>
 
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('emails_pending')}
-              style={{
-                borderLeft: quickFilter === 'emails_pending' ? '4px solid #3b82f6' : undefined,
-                background: quickFilter === 'emails_pending' ? '#eff6ff' : undefined,
-              }}
-            >
-              <Statistic
-                title="🔵 Emails Pending"
-                value={stats.emailsPending || 0}
-                valueStyle={{ color: '#3b82f6', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
+          <Button
+            size="small"
+            onClick={() => onTriggerTestModal()}
+            style={{ fontWeight: 600, fontSize: 12, borderRadius: 6 }}
+          >
+            Safe Test Email
+          </Button>
+        </div>
+      </div>
 
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('applications_sent')}
-              style={{
-                borderLeft: quickFilter === 'applications_sent' ? '4px solid #10b981' : undefined,
-                background: quickFilter === 'applications_sent' ? '#f0fdf4' : undefined,
-              }}
-            >
-              <Statistic
-                title="🟢 Applications Sent"
-                value={stats.applicationsSent || 0}
-                valueStyle={{ color: '#10b981', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
+      {/* Modern 7-Metric Priority Grid */}
+      <div className="metric-grid">
+        <div
+          className={`metric-card metric-followup ${quickFilter === 'followups_due' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('followups_due')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#fef2f2', color: '#ef4444' }}>
+            <BellOutlined />
+          </div>
+          <div className="metric-label">Follow-ups Due</div>
+          <div className="metric-value" style={{ color: '#ef4444' }}>
+            {stats.followupsDue || 0}
+          </div>
+        </div>
 
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('replies')}
-              style={{
-                borderLeft: quickFilter === 'replies' ? '4px solid #8b5cf6' : undefined,
-                background: quickFilter === 'replies' ? '#f5f3ff' : undefined,
-              }}
-            >
-              <Statistic
-                title="💬 Replies"
-                value={stats.replies || 0}
-                valueStyle={{ color: '#8b5cf6', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
+        <div
+          className={`metric-card metric-whatsapp ${quickFilter === 'whatsapp_pending' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('whatsapp_pending')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#f0fdf4', color: '#16a34a' }}>
+            <WhatsAppOutlined />
+          </div>
+          <div className="metric-label">WhatsApp Pending</div>
+          <div className="metric-value" style={{ color: '#16a34a' }}>
+            {stats.whatsappPending || 0}
+          </div>
+        </div>
 
-          <Col xs={12} sm={8} lg={4}>
-            <Card
-              className="stat-card"
-              hoverable
-              onClick={() => handleQuickFilterClick('interviews')}
-              style={{
-                borderLeft: quickFilter === 'interviews' ? '4px solid #ec4899' : undefined,
-                background: quickFilter === 'interviews' ? '#fdf2f8' : undefined,
-              }}
-            >
-              <Statistic
-                title="🎯 Interviews"
-                value={stats.interviews || 0}
-                valueStyle={{ color: '#ec4899', fontWeight: 700 }}
-              />
-            </Card>
-          </Col>
-        </Row>
+        <div
+          className={`metric-card metric-email ${quickFilter === 'emails_pending' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('emails_pending')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#eff6ff', color: '#2563eb' }}>
+            <MailOutlined />
+          </div>
+          <div className="metric-label">Emails Pending</div>
+          <div className="metric-value" style={{ color: '#2563eb' }}>
+            {stats.emailsPending || 0}
+          </div>
+        </div>
+
+        <div
+          className={`metric-card metric-sent ${quickFilter === 'applications_sent' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('applications_sent')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+            <SendOutlined />
+          </div>
+          <div className="metric-label">Applications Sent</div>
+          <div className="metric-value" style={{ color: '#059669' }}>
+            {stats.applicationsSent || 0}
+          </div>
+        </div>
+
+        <div
+          className={`metric-card metric-reply ${quickFilter === 'replies' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('replies')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#f5f3ff', color: '#8b5cf6' }}>
+            <ThunderboltOutlined />
+          </div>
+          <div className="metric-label">Inbound Replies</div>
+          <div className="metric-value" style={{ color: '#8b5cf6' }}>
+            {stats.replies || 0}
+          </div>
+        </div>
+
+        <div
+          className={`metric-card metric-interview ${quickFilter === 'interviews' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('interviews')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#fdf2f8', color: '#ec4899' }}>
+            <CheckCircleOutlined />
+          </div>
+          <div className="metric-label">Interviews</div>
+          <div className="metric-value" style={{ color: '#ec4899' }}>
+            {stats.interviews || 0}
+          </div>
+        </div>
+
+        <div
+          className={`metric-card metric-bounced ${quickFilter === 'bounced' ? 'active' : ''}`}
+          onClick={() => handleQuickFilterClick('bounced')}
+        >
+          <div className="metric-icon-wrap" style={{ background: '#fef2f2', color: '#dc2626' }}>
+            <CloseCircleOutlined />
+          </div>
+          <div className="metric-label">Bounced / Invalid</div>
+          <div className="metric-value" style={{ color: '#dc2626' }}>
+            {stats.bounced || 0}
+          </div>
+        </div>
       </div>
 
       {/* Main CRM Table Card */}
       <Card
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+        style={{
+          borderRadius: 14,
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+        }}
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 16 }}>Company Prospects</span>
-            <Tag color="blue">{totalJobs} total records</Tag>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 800, fontSize: 16, color: '#0f172a' }}>Prospect Pipeline</span>
+            <span
+              style={{
+                background: '#eff6ff',
+                color: '#2563eb',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 6,
+                border: '1px solid #bfdbfe',
+              }}
+            >
+              {totalJobs} total
+            </span>
           </div>
         }
         extra={
-          <Space wrap>
+          <Space wrap size={10}>
             <Input
               placeholder="Search company, role, HR..."
-              prefix={<SearchOutlined />}
+              prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onPressEnter={() => {
                 setPage(1);
                 fetchJobs();
               }}
-              style={{ width: 220 }}
+              style={{ width: 230 }}
               allowClear
             />
 
@@ -617,7 +1121,7 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
                 setStatusFilter(val);
                 setPage(1);
               }}
-              style={{ width: 170 }}
+              style={{ width: 180 }}
             >
               <Option value="ALL">All Statuses</Option>
               <Option value="NEW">NEW</Option>
@@ -630,29 +1134,35 @@ export function Dashboard({ onNavigate, onTriggerTestModal }) {
               <Option value="REPLIED">REPLIED</Option>
               <Option value="INTERVIEW">INTERVIEW</Option>
               <Option value="FOLLOW_UP">FOLLOW_UP</Option>
+              <Option value="BOUNCED">⛔ BOUNCED / INVALID</Option>
               <Option value="CLOSED">CLOSED</Option>
             </Select>
 
-            <Button icon={<ReloadOutlined />} onClick={refreshAll}>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={refreshAll}
+              style={{ fontWeight: 600 }}
+            >
               Refresh
             </Button>
           </Space>
         }
       >
-        {/* Quick Filter Tabs */}
-        <div style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap' }}>
+        {/* Quick Filter Pill Tabs */}
+        <div style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: 4 }}>
           <Radio.Group
             value={quickFilter}
             onChange={(e) => handleQuickFilterClick(e.target.value)}
             buttonStyle="solid"
           >
-            <Radio.Button value="all">All Prospects</Radio.Button>
-            <Radio.Button value="followups_due">🔴 Follow-ups Due</Radio.Button>
-            <Radio.Button value="whatsapp_pending">🟡 WhatsApp Pending</Radio.Button>
-            <Radio.Button value="emails_pending">🔵 Emails Pending</Radio.Button>
-            <Radio.Button value="applications_sent">🟢 Applications Sent</Radio.Button>
-            <Radio.Button value="replies">💬 Replies</Radio.Button>
-            <Radio.Button value="interviews">🎯 Interviews</Radio.Button>
+            <Radio.Button value="all">All ({totalJobs})</Radio.Button>
+            <Radio.Button value="followups_due">🔴 Follow-ups ({stats.followupsDue || 0})</Radio.Button>
+            <Radio.Button value="whatsapp_pending">🟡 WhatsApp ({stats.whatsappPending || 0})</Radio.Button>
+            <Radio.Button value="emails_pending">🔵 Emails ({stats.emailsPending || 0})</Radio.Button>
+            <Radio.Button value="applications_sent">🟢 Sent ({stats.applicationsSent || 0})</Radio.Button>
+            <Radio.Button value="replies">💬 Replies ({stats.replies || 0})</Radio.Button>
+            <Radio.Button value="interviews">🎯 Interviews ({stats.interviews || 0})</Radio.Button>
+            <Radio.Button value="bounced">⛔ Bounced ({stats.bounced || 0})</Radio.Button>
           </Radio.Group>
         </div>
 

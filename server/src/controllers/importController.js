@@ -23,11 +23,17 @@ export async function importJsonFile(req, res) {
       });
     }
 
+    const skipDuplicates =
+      req.query.skipDuplicates === 'true' ||
+      req.body?.skipDuplicates === true ||
+      req.body?.skipDuplicates === 'true';
+
     const result = await processJobsImport({
       content,
       filename,
       filePath,
       source: req.body?.source || 'Manual Web Upload',
+      skipDuplicates,
     });
 
     res.json(result);

@@ -80,6 +80,47 @@ const SettingSchema = new mongoose.Schema(
       type: Boolean,
       default: () => (process.env.DRY_RUN !== undefined ? process.env.DRY_RUN === 'true' : true),
     },
+    // IMAP Reply Tracking Configuration
+    imapHost: {
+      type: String,
+      default: () => process.env.IMAP_HOST || 'imap.gmail.com',
+    },
+    imapPort: {
+      type: Number,
+      default: () => parseInt(process.env.IMAP_PORT, 10) || 993,
+    },
+    imapSecure: {
+      type: Boolean,
+      default: () => (process.env.IMAP_SECURE !== undefined ? process.env.IMAP_SECURE === 'true' : true),
+    },
+    imapUser: {
+      type: String,
+      default: () => process.env.IMAP_USER || process.env.SMTP_USER || '',
+    },
+    imapPassword: {
+      type: String,
+      default: () => process.env.IMAP_PASSWORD || process.env.SMTP_PASSWORD || '',
+    },
+    autoCheckReplies: {
+      type: Boolean,
+      default: false,
+    },
+    lastReplyCheckAt: {
+      type: Date,
+      default: null,
+    },
+    repliesFoundCount: {
+      type: Number,
+      default: 0,
+    },
+    bouncesFoundCount: {
+      type: Number,
+      default: 0,
+    },
+    lastBounceCheckAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

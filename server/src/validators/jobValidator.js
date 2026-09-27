@@ -1,19 +1,90 @@
 import { z } from 'zod';
 
 /**
+ * Helper to strip mailto: and angle brackets from email
+ */
+function cleanEmail(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  let s = raw.trim();
+  if (s.toLowerCase().startsWith('mailto:')) {
+    s = s.substring(7).trim();
+  }
+  const angleMatch = s.match(/<([^>]+)>/);
+  if (angleMatch) {
+    s = angleMatch[1].trim();
+  }
+  return s;
+}
+
+/**
+ * Checks if a string represents an empty, missing, or AI-generated placeholder email
+ */
+function isMissingOrPlaceholderEmail(val) {
+  if (!val) return true;
+  if (typeof val !== 'string') return true;
+  const s = val.trim().toLowerCase();
+  return (
+    !s ||
+    s === 'null' ||
+    s === 'undefined' ||
+    s === 'n/a' ||
+    s === 'na' ||
+    s === 'none' ||
+    s === 'not available' ||
+    s === 'not provided' ||
+    s === 'not found' ||
+    s === 'no email' ||
+    s === 'unknown' ||
+    s === '-' ||
+    s === 'nil'
+  );
+}
+
+/**
  * Preprocessor that normalizes flat format and rich CRM nested format
  */
 function normalizeJobInput(val) {
   if (!val || typeof val !== 'object') return val;
   const clone = { ...val };
 
-  const contact = clone.contact || {};
-  const jobDetails = clone.job || {};
+  // 1. Sanitize nested objects if they are null or not objects (AI agents often return "email": null)
+  if (clone.email === null || typeof clone.email !== 'object') clone.email = {};
+  if (clone.whatsapp === null || typeof clone.whatsapp !== 'object') clone.whatsapp = {};
+  if (clone.linkedin === null || typeof clone.linkedin !== 'object') clone.linkedin = {};
+  if (clone.contact === null || typeof clone.contact !== 'object') clone.contact = {};
+  if (clone.job === null || typeof clone.job !== 'object') clone.job = {};
+  if (clone.tracking === null || typeof clone.tracking !== 'object') clone.tracking = {};
 
-  // Extract email
-  if (!clone.hrEmail && contact.email) {
-    clone.hrEmail = contact.email;
+  const contact = clone.contact;
+  const jobDetails = clone.job;
+
+  // 2. Extract and clean candidate email
+  let candidateEmail = clone.hrEmail || contact.email || (clone.email && typeof clone.email === 'object' ? clone.email.to : null);
+  if (typeof candidateEmail === 'string') {
+    candidateEmail = cleanEmail(candidateEmail);
   }
+
+  // If email is missing, null, or a placeholder (e.g. AI agent didn't find public HR email)
+  if (isMissingOrPlaceholderEmail(candidateEmail)) {
+    const companySlug = (clone.company || 'prospect')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    const fallbackEmail = `careers@${companySlug || 'prospect'}.com`;
+    clone.hrEmail = fallbackEmail;
+    clone.contact.email = fallbackEmail;
+    if (!clone.contactVerification) {
+      clone.contactVerification = {
+        status: 'unverified',
+        reason: 'Email not provided in lead source; placeholder generated. Use WhatsApp/LinkedIn or update email.',
+      };
+    }
+  } else {
+    clone.hrEmail = candidateEmail;
+    if (!clone.contact.email) {
+      clone.contact.email = candidateEmail;
+    }
+  }
+
   // Extract HR Name
   if (!clone.hrName && contact.hrName) {
     clone.hrName = contact.hrName;
@@ -37,6 +108,14 @@ function normalizeJobInput(val) {
   // Extract remote / workMode
   if (clone.remote === undefined && jobDetails.workMode) {
     clone.remote = jobDetails.workMode.toLowerCase().includes('remote');
+  }
+
+  // Cross-sync contact phone and whatsapp phone
+  if (contact.phone && !contact.whatsapp) {
+    contact.whatsapp = contact.phone;
+  }
+  if (contact.phone && !clone.whatsapp.phone) {
+    clone.whatsapp.phone = contact.phone;
   }
 
   return clone;
@@ -86,8 +165,8 @@ export const SingleJobSchema = z.preprocess(
         whatsapp: z.string().optional().default(''),
         linkedin: z.string().optional().default(''),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     // CRM Job structure
     job: z
@@ -100,8 +179,8 @@ export const SingleJobSchema = z.preprocess(
         experienceRequired: z.string().optional().default(''),
         requirements: z.array(z.string()).optional().default([]),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     // Email
     email: z
@@ -112,8 +191,8 @@ export const SingleJobSchema = z.preprocess(
         status: z.string().optional().default('not_sent'),
         sentAt: z.any().optional().nullable(),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     // WhatsApp
     whatsapp: z
@@ -124,8 +203,8 @@ export const SingleJobSchema = z.preprocess(
         copiedAt: z.any().optional().nullable(),
         sentAt: z.any().optional().nullable(),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     // LinkedIn
     linkedin: z
@@ -135,8 +214,8 @@ export const SingleJobSchema = z.preprocess(
         status: z.string().optional().default('not_contacted'),
         contactedAt: z.any().optional().nullable(),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     // Tracking
     tracking: z
@@ -148,8 +227,8 @@ export const SingleJobSchema = z.preprocess(
         followUpCount: z.number().optional().default(0),
         notes: z.string().optional().default(''),
       })
-      .optional()
-      .default({}),
+      .nullish()
+      .transform((v) => v || {}),
 
     contactVerification: z
       .object({

@@ -15,6 +15,7 @@ import {
   Card,
   Tooltip,
   message,
+  Alert,
 } from 'antd';
 import {
   CheckOutlined,
@@ -34,6 +35,8 @@ import {
   CommentOutlined,
   CheckCircleOutlined,
   ScheduleOutlined,
+  CloseCircleOutlined,
+  StopOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { JobsAPI } from '../services/api';
@@ -64,6 +67,8 @@ export const STATUS_COLORS = {
   SENT: 'green',
   FAILED: 'red',
   SKIPPED: 'default',
+  BOUNCED: 'red',
+  INVALID_EMAIL: 'red',
 };
 
 export function JobDetailModal({
@@ -96,6 +101,36 @@ export function JobDetailModal({
     } finally {
       setChangingStatus(false);
     }
+  };
+
+  const handleMarkBounced = () => {
+    Modal.confirm({
+      title: 'Mark Email as Bounced / Invalid?',
+      icon: <CloseCircleOutlined style={{ color: '#ef4444' }} />,
+      content: (
+        <div>
+          <p>
+            This will mark <strong>{hrEmail || job.company}</strong> as an invalid or non-existent email address (e.g. <code>550 5.1.1 User does not exist</code>).
+          </p>
+          <p style={{ color: '#64748b', fontSize: 13 }}>
+            Future automated queue dispatches to this address will be automatically blocked to protect your sender score.
+          </p>
+        </div>
+      ),
+      okText: 'Mark as Bounced',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await JobsAPI.markBounced(job._id, {
+            reason: '550 5.1.1 User does not exist - Address not found',
+          });
+          message.success(`Marked ${job.company} as BOUNCED`);
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          message.error('Failed to mark as bounced');
+        }
+      },
+    });
   };
 
   const handleAddNote = async () => {
@@ -135,6 +170,7 @@ export function JobDetailModal({
       ];
 
   const getTimelineIcon = (action) => {
+    if (action.includes('BOUNCED')) return <CloseCircleOutlined style={{ color: '#ef4444' }} />;
     if (action.includes('EMAIL')) return <MailOutlined style={{ color: '#1890ff' }} />;
     if (action.includes('WHATSAPP')) return <WhatsAppOutlined style={{ color: '#25D366' }} />;
     if (action.includes('FOLLOWUP')) return <BellOutlined style={{ color: '#fa8c16' }} />;
@@ -188,6 +224,7 @@ export function JobDetailModal({
               <Option value="INTERVIEW">INTERVIEW</Option>
               <Option value="FOLLOW_UP">FOLLOW_UP</Option>
               <Option value="NO_RESPONSE">NO_RESPONSE</Option>
+              <Option value="BOUNCED">⛔ BOUNCED / INVALID</Option>
               <Option value="REJECTED">REJECTED</Option>
               <Option value="CLOSED">CLOSED</Option>
             </Select>
@@ -217,6 +254,27 @@ export function JobDetailModal({
       centered
     >
       <div style={{ padding: '8px 0', maxHeight: '72vh', overflowY: 'auto' }}>
+        {/* Bounce Alert Banner if email delivery failed */}
+        {(job.status === 'BOUNCED' || job.email?.status === 'bounced' || job.contactVerification?.status === 'invalid') && (
+          <Alert
+            type="error"
+            showIcon
+            icon={<CloseCircleOutlined style={{ fontSize: 20 }} />}
+            message="Email Delivery Failed / Address Not Found"
+            description={
+              <div>
+                <p style={{ margin: '0 0 4px 0', fontWeight: 600, color: '#b91c1c' }}>
+                  {job.contactVerification?.reason || job.lastError || '550 5.1.1 User does not exist - Address not found'}
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: '#475569' }}>
+                  The email address <code>{hrEmail}</code> is invalid or unable to receive mail. Queue dispatch is blocked for this contact. Check with the hiring team via WhatsApp or LinkedIn.
+                </p>
+              </div>
+            }
+            style={{ marginBottom: 16, borderRadius: 8 }}
+          />
+        )}
+
         {/* Quick Action Bar */}
         <div
           style={{
@@ -276,6 +334,17 @@ export function JobDetailModal({
             <Button icon={<BellOutlined />} onClick={() => onTriggerFollowUp && onTriggerFollowUp(job)}>
               Follow-up
             </Button>
+
+            {job.status !== 'BOUNCED' && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleMarkBounced}
+                title="Mark this email as bounced / invalid"
+              >
+                Mark Bounced
+              </Button>
+            )}
           </Space>
         </div>
 

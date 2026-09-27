@@ -15,6 +15,8 @@ dotenv.config(); // also loads local .env if present
 
 import logger from './config/logger.js';
 import { connectDB } from './config/db.js';
+import { Job } from './models/Job.js';
+import { markEmailAsBounced } from './services/mail/imapReplyTracker.js';
 import { queueManager } from './services/queue/queueService.js';
 import { startFolderWatcher } from './services/importer/folderWatcher.js';
 
@@ -75,6 +77,26 @@ export async function startServer(port = process.env.PORT || 5080, host = proces
   try {
     await connectDB();
     await queueManager.recoverOrphanedJobs();
+
+    // Auto-record dev@ansorbit.com if not already recorded
+    try {
+      const existingAnsorbit = await Job.findOne({
+        $or: [
+          { normalizedHrEmail: 'dev@ansorbit.com' },
+          { hrEmail: 'dev@ansorbit.com' },
+        ],
+      });
+      if (!existingAnsorbit) {
+        await markEmailAsBounced({
+          email: 'dev@ansorbit.com',
+          reason: '550 5.1.1 User does not exist - Address not found',
+          rawError: 'The response from the remote server was: 550 5.1.1 User does not exist - Address not found',
+        });
+        logger.info('[Init] Successfully recorded dev@ansorbit.com as BOUNCED');
+      }
+    } catch (seedErr) {
+      logger.debug({ err: seedErr.message }, '[Init] Skip auto-record');
+    }
 
     // Start incoming folder watcher
     startFolderWatcher();

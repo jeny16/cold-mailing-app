@@ -20,6 +20,7 @@ export async function getStats(req, res) {
       sentJobs,
       failedJobs,
       skippedJobs,
+      bouncedJobs,
       totalContacts,
       totalImports,
 
@@ -40,6 +41,13 @@ export async function getStats(req, res) {
       Job.countDocuments({ status: { $in: ['SENT', 'EMAIL_SENT'] } }),
       Job.countDocuments({ status: 'FAILED' }),
       Job.countDocuments({ status: 'SKIPPED' }),
+      Job.countDocuments({
+        $or: [
+          { status: 'BOUNCED' },
+          { 'email.status': 'bounced' },
+          { 'contactVerification.status': 'invalid' },
+        ],
+      }),
       Contact.countDocuments(),
       Import.countDocuments(),
 
@@ -107,6 +115,7 @@ export async function getStats(req, res) {
         sent: sentJobs,
         failed: failedJobs,
         skipped: skippedJobs,
+        bounced: bouncedJobs,
         contacts: totalContacts,
         imports: totalImports,
         sentToday: queueStatus.sentToday,
@@ -121,6 +130,8 @@ export async function getStats(req, res) {
         applicationsSent,
         replies,
         interviews,
+        bouncedJobs,
+        bouncesFoundCount: settings.bouncesFoundCount || 0,
       },
       recentJobs,
       recentEmails,

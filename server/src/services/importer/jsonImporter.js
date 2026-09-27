@@ -52,8 +52,15 @@ export function safeMoveFile(sourcePath, targetDir) {
  * @param {string} options.filename - Original filename
  * @param {string} [options.filePath] - Absolute path if coming from file system
  * @param {string} [options.source] - AI agent / import source
+ * @param {boolean} [options.skipDuplicates] - If true, do not insert duplicate jobs into the database
  */
-export async function processJobsImport({ content, filename = 'manual-upload.json', filePath = null, source = 'Manual Import' }) {
+export async function processJobsImport({
+  content,
+  filename = 'manual-upload.json',
+  filePath = null,
+  source = 'Manual Import',
+  skipDuplicates = false,
+}) {
   logger.info(`[Importer] Processing import for: ${filename}`);
 
   let parsedData = null;
@@ -207,6 +214,12 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
 
     if (isDup) {
       duplicateCount++;
+      if (skipDuplicates) {
+        logger.info(
+          `[Importer] Skipping duplicate job (${validatedData.company} - ${validatedData.role}): ${dupReason}`
+        );
+        continue; // Skip DB insertion for duplicates
+      }
     } else {
       newCount++;
     }
@@ -340,6 +353,8 @@ export async function processJobsImport({ content, filename = 'manual-upload.jso
       duplicates: duplicateCount,
       newJobs: newCount,
       existing: duplicateCount,
+      duplicatesSkipped: skipDuplicates ? duplicateCount : 0,
+      skipDuplicates: Boolean(skipDuplicates),
     },
     errors: validationErrors,
     jobs: insertedJobs,

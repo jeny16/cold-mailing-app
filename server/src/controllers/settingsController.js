@@ -26,6 +26,13 @@ export async function getSettings(req, res) {
         maxDelaySeconds: settings.maxDelaySeconds,
         maxEmailsPerRun: settings.maxEmailsPerRun,
         dryRun: settings.dryRun,
+        imapHost: settings.imapHost || 'imap.gmail.com',
+        imapPort: settings.imapPort || 993,
+        imapSecure: settings.imapSecure !== undefined ? settings.imapSecure : true,
+        imapUser: settings.imapUser || '',
+        imapConfigured: Boolean(settings.imapUser && settings.imapPassword),
+        lastReplyCheckAt: settings.lastReplyCheckAt,
+        repliesFoundCount: settings.repliesFoundCount || 0,
         smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
         smtpHost: process.env.SMTP_HOST || 'Not configured',
         smtpPort: process.env.SMTP_PORT || 587,
@@ -55,6 +62,12 @@ export async function updateSettings(req, res) {
       'maxDelaySeconds',
       'maxEmailsPerRun',
       'dryRun',
+      'imapHost',
+      'imapPort',
+      'imapSecure',
+      'imapUser',
+      'imapPassword',
+      'autoCheckReplies',
     ];
 
     const updates = {};

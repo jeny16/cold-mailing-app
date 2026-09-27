@@ -132,4 +132,71 @@ describe('Job Validator (Zod)', () => {
     expect(res.success).toBe(true);
     expect(res.data).toHaveLength(1);
   });
+
+  it('should gracefully handle AI leads with email: null and whatsapp: null and generate fallback email', () => {
+    const aiLeadWithNulls = {
+      company: 'Script Assist',
+      role: 'Full Stack Engineer – Node.js / TypeScript / React',
+      contact: {
+        hrName: 'Recruiter',
+        email: null,
+        phone: '+919876543210',
+      },
+      email: null,
+      whatsapp: null,
+      linkedin: null,
+    };
+
+    const res = validateSingleJob(aiLeadWithNulls);
+    expect(res.success).toBe(true);
+    expect(res.data.company).toBe('Script Assist');
+    expect(res.data.hrEmail).toBe('careers@scriptassist.com');
+    expect(res.data.contactVerification?.status).toBe('unverified');
+    expect(res.data.whatsapp.phone).toBe('+919876543210');
+  });
+
+  it('should handle placeholder emails like N/A and none by generating careers fallback', () => {
+    const lead = {
+      company: 'iGlobsyn Technologies',
+      role: 'AI / Full Stack Developer',
+      hrEmail: 'N/A',
+      contact: {
+        phone: '+919898989898',
+      },
+      email: null,
+      whatsapp: null,
+    };
+
+    const res = validateSingleJob(lead);
+    expect(res.success).toBe(true);
+    expect(res.data.hrEmail).toBe('careers@iglobsyntechnologies.com');
+  });
+
+  it('should validate an entire batch of AI generated leads containing null objects', () => {
+    const batch = {
+      jobs: [
+        {
+          company: 'Script Assist',
+          role: 'Full Stack Engineer – Node.js / TypeScript / React',
+          email: null,
+          whatsapp: null,
+          contact: { phone: '+919999999999' },
+        },
+        {
+          company: 'iGlobsyn Technologies',
+          role: 'AI / Full Stack Developer',
+          email: null,
+          whatsapp: null,
+          hrEmail: 'none',
+        },
+      ],
+    };
+
+    const res = validateJobsPayload(batch);
+    expect(res.success).toBe(true);
+    expect(res.data).toHaveLength(2);
+    expect(res.data[0].hrEmail).toBe('careers@scriptassist.com');
+    expect(res.data[1].hrEmail).toBe('careers@iglobsyntechnologies.com');
+  });
 });
+

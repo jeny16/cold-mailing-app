@@ -25,8 +25,13 @@ import {
   SafetyCertificateOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  SyncOutlined,
+  ThunderboltOutlined,
+  MailOutlined,
+  CloseCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
-import { SettingsAPI } from '../services/api';
+import { SettingsAPI, EmailsAPI } from '../services/api';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -37,6 +42,13 @@ export function Settings({ onTriggerTestModal }) {
   const [saving, setSaving] = useState(false);
   const [resumeInfo, setResumeInfo] = useState(null);
   const [smtpStatus, setSmtpStatus] = useState(null);
+  const [imapStatus, setImapStatus] = useState(null);
+  const [testingImap, setTestingImap] = useState(false);
+  const [simulatingReply, setSimulatingReply] = useState(false);
+  const [simulatingBounce, setSimulatingBounce] = useState(false);
+  const [testingEmail, setTestingEmail] = useState('dev@ansorbit.com');
+  const [validatingEmail, setValidatingEmail] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
 
   // Live preview template values
   const [subjectTemplate, setSubjectTemplate] = useState('');
@@ -55,6 +67,14 @@ export function Settings({ onTriggerTestModal }) {
         port: s.smtpPort,
         user: s.smtpUser,
       });
+      setImapStatus({
+        configured: s.imapConfigured,
+        host: s.imapHost,
+        port: s.imapPort,
+        user: s.imapUser,
+        lastReplyCheckAt: s.lastReplyCheckAt,
+        repliesFoundCount: s.repliesFoundCount,
+      });
 
       form.setFieldsValue({
         senderName: s.senderName,
@@ -69,6 +89,9 @@ export function Settings({ onTriggerTestModal }) {
         maxDelaySeconds: s.maxDelaySeconds,
         maxEmailsPerRun: s.maxEmailsPerRun,
         dryRun: s.dryRun,
+        imapHost: s.imapHost || 'imap.gmail.com',
+        imapPort: s.imapPort || 993,
+        imapUser: s.imapUser || '',
       });
 
       setSubjectTemplate(s.emailSubjectTemplate || '');
@@ -95,6 +118,70 @@ export function Settings({ onTriggerTestModal }) {
       message.error(err.response?.data?.error || 'Failed to update settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestImap = async () => {
+    try {
+      setTestingImap(true);
+      const values = form.getFieldsValue(['imapHost', 'imapPort', 'imapUser', 'imapPassword']);
+      const res = await EmailsAPI.testImap(values);
+      if (res.success) {
+        message.success(res.message);
+      } else {
+        message.error(res.error || 'IMAP test failed');
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to test IMAP');
+    } finally {
+      setTestingImap(false);
+    }
+  };
+
+  const handleSimulateReply = async () => {
+    try {
+      setSimulatingReply(true);
+      const res = await EmailsAPI.simulateReply();
+      message.success(res.message);
+      fetchSettings();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Simulation failed');
+    } finally {
+      setSimulatingReply(false);
+    }
+  };
+
+  const handleSimulateBounce = async () => {
+    try {
+      setSimulatingBounce(true);
+      const res = await EmailsAPI.simulateBounce({
+        bouncedEmail: 'dev@ansorbit.com',
+        reason: '550 5.1.1 User does not exist - Address not found',
+      });
+      message.success(res.message);
+      fetchSettings();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Bounce simulation failed');
+    } finally {
+      setSimulatingBounce(false);
+    }
+  };
+
+  const handleValidateEmail = async () => {
+    if (!testingEmail) return;
+    try {
+      setValidatingEmail(true);
+      const res = await EmailsAPI.validateAddress({ email: testingEmail, checkMx: true });
+      setValidationResult(res);
+      if (res.valid) {
+        message.success(`"${testingEmail}" is valid!`);
+      } else {
+        message.warning(`Issue detected: ${res.reason}`);
+      }
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Validation check failed');
+    } finally {
+      setValidatingEmail(false);
     }
   };
 
@@ -308,7 +395,7 @@ export function Settings({ onTriggerTestModal }) {
             </Card>
 
             {/* SMTP Status */}
-            <Card title="SMTP Server Configuration" style={{ borderRadius: 12 }}>
+            <Card title="SMTP Server Configuration" style={{ borderRadius: 12, marginBottom: 24 }}>
               <Alert
                 type={smtpStatus?.configured ? 'success' : 'warning'}
                 showIcon
@@ -329,6 +416,168 @@ export function Settings({ onTriggerTestModal }) {
                   </div>
                 }
               />
+            </Card>
+
+            {/* IMAP Inbox & Reply Tracking Configuration */}
+            <Card
+              title={
+                <Space>
+                  <MailOutlined style={{ color: '#8b5cf6' }} />
+                  <span>IMAP Inbox & Reply Tracking Configuration</span>
+                </Space>
+              }
+              style={{ borderRadius: 12 }}
+            >
+              <Alert
+                type={imapStatus?.configured ? 'success' : 'info'}
+                showIcon
+                icon={<SafetyCertificateOutlined />}
+                message={
+                  imapStatus?.configured
+                    ? 'IMAP Reply & Bounce Tracking Configured'
+                    : 'Configure IMAP to Track Inbound Replies & Delivery Failures'
+                }
+                description={
+                  <div>
+                    <p style={{ margin: 0 }}>
+                      Allows the CRM to monitor your inbox and automatically detect both <strong>REPLIED</strong> emails and <strong>BOUNCED</strong> undelivered notifications (550 User does not exist).
+                    </p>
+                    {imapStatus?.lastReplyCheckAt && (
+                      <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748b' }}>
+                        Last checked: {new Date(imapStatus.lastReplyCheckAt).toLocaleString()} | Replies: <strong>{imapStatus.repliesFoundCount || 0}</strong> | Bounces detected: <strong>{imapStatus.bouncesFoundCount || 0}</strong>
+                      </p>
+                    )}
+                  </div>
+                }
+                style={{ marginBottom: 16 }}
+              />
+
+              <Row gutter={12}>
+                <Col xs={24} sm={16}>
+                  <Form.Item
+                    name="imapHost"
+                    label="IMAP Server Host"
+                    extra="e.g. imap.gmail.com, outlook.office365.com, imap.mail.yahoo.com"
+                  >
+                    <Input placeholder="imap.gmail.com" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item name="imapPort" label="IMAP Port">
+                    <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="993" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Row gutter={12}>
+                <Col xs={24} sm={12}>
+                  <Form.Item
+                    name="imapUser"
+                    label="IMAP Email Address"
+                    extra="Your email account username"
+                  >
+                    <Input placeholder="you@gmail.com" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Form.Item
+                    name="imapPassword"
+                    label="IMAP Password / App Password"
+                    extra="For Gmail, use a 16-character Google App Password"
+                  >
+                    <Input.Password placeholder="••••••••••••••••" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={handleTestImap}
+                  loading={testingImap}
+                >
+                  Test IMAP Connection
+                </Button>
+
+                <Space wrap>
+                  <Button
+                    type="dashed"
+                    icon={<ThunderboltOutlined />}
+                    onClick={handleSimulateReply}
+                    loading={simulatingReply}
+                    style={{ color: '#8b5cf6', borderColor: '#c4b5fd' }}
+                  >
+                    Simulate HR Reply
+                  </Button>
+
+                  <Button
+                    type="dashed"
+                    danger
+                    icon={<CloseCircleOutlined />}
+                    onClick={handleSimulateBounce}
+                    loading={simulatingBounce}
+                  >
+                    Simulate Bounce (dev@ansorbit.com)
+                  </Button>
+                </Space>
+              </div>
+            </Card>
+
+            {/* Email Address Hygiene & Validation Tester */}
+            <Card
+              title={
+                <Space>
+                  <SafetyCertificateOutlined style={{ color: '#10b981' }} />
+                  <span>Email Hygiene & Domain Validator</span>
+                </Space>
+              }
+              style={{ borderRadius: 12, marginTop: 24 }}
+            >
+              <p style={{ fontSize: 13, color: '#64748b', marginTop: 0 }}>
+                Check any recipient address for RFC syntax, dummy domains, typos, and mail server (MX) capability before sending:
+              </p>
+              <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
+                <Input
+                  value={testingEmail}
+                  onChange={(e) => setTestingEmail(e.target.value)}
+                  placeholder="e.g. dev@ansorbit.com"
+                  onPressEnter={handleValidateEmail}
+                />
+                <Button
+                  type="primary"
+                  onClick={handleValidateEmail}
+                  loading={validatingEmail}
+                >
+                  Validate
+                </Button>
+              </Space.Compact>
+
+              {validationResult && (
+                <Alert
+                  type={validationResult.valid ? 'success' : 'error'}
+                  showIcon
+                  icon={validationResult.valid ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                  message={
+                    validationResult.valid
+                      ? `Valid Recipient: "${validationResult.email}"`
+                      : `Delivery Issue: "${validationResult.email}"`
+                  }
+                  description={
+                    <div>
+                      <p style={{ margin: 0 }}>
+                        {validationResult.valid
+                          ? 'Email syntax and domain structure are valid.'
+                          : validationResult.reason}
+                      </p>
+                      {validationResult.suggestedCorrection && (
+                        <p style={{ margin: '4px 0 0 0', fontWeight: 600, color: '#b45309' }}>
+                          Suggested correction: {validationResult.suggestedCorrection}
+                        </p>
+                      )}
+                    </div>
+                  }
+                />
+              )}
             </Card>
           </Col>
 

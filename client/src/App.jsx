@@ -116,9 +116,45 @@ export function App() {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#1890ff',
-          borderRadius: 8,
+          colorPrimary: '#2563eb',
+          colorSuccess: '#10b981',
+          colorWarning: '#f59e0b',
+          colorError: '#ef4444',
+          colorInfo: '#3b82f6',
+          borderRadius: 10,
+          colorTextBase: '#0f172a',
+          colorTextSecondary: '#64748b',
+          colorBgContainer: '#ffffff',
+          colorBorder: '#e2e8f0',
+          colorBorderSecondary: '#f1f5f9',
           fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        },
+        components: {
+          Button: {
+            borderRadius: 8,
+            fontWeight: 600,
+            controlHeight: 36,
+          },
+          Card: {
+            borderRadiusLG: 14,
+          },
+          Table: {
+            headerBg: '#f8fafc',
+            headerColor: '#475569',
+            rowHoverBg: '#f8faff',
+            borderRadiusLG: 14,
+          },
+          Tag: {
+            borderRadiusSM: 6,
+          },
+          Input: {
+            borderRadius: 8,
+            controlHeight: 36,
+          },
+          Select: {
+            borderRadius: 8,
+            controlHeight: 36,
+          },
         },
       }}
     >
