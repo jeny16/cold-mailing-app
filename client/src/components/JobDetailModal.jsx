@@ -58,6 +58,12 @@ export const STATUS_COLORS = {
   REJECTED: 'red',
   NO_RESPONSE: 'volcano',
   FOLLOW_UP: 'warning',
+  FOLLOW_UP_1_DUE: 'orange',
+  FOLLOW_UP_1_SENT: 'processing',
+  FOLLOW_UP_2_DUE: 'volcano',
+  FOLLOW_UP_2_SENT: 'purple',
+  NO_REQUIREMENT: 'default',
+  NO_FOLLOW_UP: 'default',
   CLOSED: 'default',
   // Legacy
   REVIEW: 'orange',
@@ -211,18 +217,24 @@ export function JobDetailModal({
               value={job.status}
               onChange={handleStatusChange}
               loading={changingStatus}
-              style={{ width: 180 }}
+              style={{ width: 190 }}
             >
               <Option value="NEW">NEW</Option>
               <Option value="RESEARCHED">RESEARCHED</Option>
               <Option value="READY_TO_CONTACT">READY_TO_CONTACT</Option>
               <Option value="EMAIL_SENT">EMAIL_SENT</Option>
+              <Option value="SENT">SENT</Option>
+              <Option value="FOLLOW_UP_1_DUE">FOLLOW_UP_1_DUE</Option>
+              <Option value="FOLLOW_UP_1_SENT">FOLLOW_UP_1_SENT</Option>
+              <Option value="FOLLOW_UP_2_DUE">FOLLOW_UP_2_DUE</Option>
+              <Option value="FOLLOW_UP_2_SENT">FOLLOW_UP_2_SENT</Option>
+              <Option value="FOLLOW_UP">FOLLOW_UP</Option>
+              <Option value="NO_REQUIREMENT">🚫 NO REQUIREMENT</Option>
               <Option value="WHATSAPP_PENDING">WHATSAPP_PENDING</Option>
               <Option value="WHATSAPP_SENT">WHATSAPP_SENT</Option>
               <Option value="LINKEDIN_CONTACTED">LINKEDIN_CONTACTED</Option>
               <Option value="REPLIED">REPLIED</Option>
               <Option value="INTERVIEW">INTERVIEW</Option>
-              <Option value="FOLLOW_UP">FOLLOW_UP</Option>
               <Option value="NO_RESPONSE">NO_RESPONSE</Option>
               <Option value="BOUNCED">⛔ BOUNCED / INVALID</Option>
               <Option value="REJECTED">REJECTED</Option>

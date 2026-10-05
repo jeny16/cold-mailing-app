@@ -31,6 +31,8 @@ export async function getStats(req, res) {
       applicationsSent,
       replies,
       interviews,
+      followupsScheduled,
+      noRequirement,
     ] = await Promise.all([
       Job.countDocuments(),
       Job.countDocuments({ status: { $in: ['NEW', 'RESEARCHED'] } }),
@@ -38,7 +40,20 @@ export async function getStats(req, res) {
       Job.countDocuments({ status: 'APPROVED' }),
       Job.countDocuments({ status: 'QUEUED' }),
       Job.countDocuments({ status: 'SENDING' }),
-      Job.countDocuments({ status: { $in: ['SENT', 'EMAIL_SENT'] } }),
+      Job.countDocuments({
+        status: {
+          $in: [
+            'SENT',
+            'EMAIL_SENT',
+            'FOLLOW_UP_1_DUE',
+            'FOLLOW_UP_1_SENT',
+            'FOLLOW_UP_2_DUE',
+            'FOLLOW_UP_2_SENT',
+            'FOLLOW_UP',
+            'NO_REQUIREMENT',
+          ],
+        },
+      }),
       Job.countDocuments({ status: 'FAILED' }),
       Job.countDocuments({ status: 'SKIPPED' }),
       Job.countDocuments({
@@ -51,13 +66,10 @@ export async function getStats(req, res) {
       Contact.countDocuments(),
       Import.countDocuments(),
 
-      // 🔴 Follow-ups Due
+      // 🔴 Follow-ups Due (overdue or due today)
       Job.countDocuments({
-        $or: [
-          { status: 'FOLLOW_UP' },
-          { 'tracking.nextFollowUpAt': { $ne: null, $lte: endOfToday } },
-        ],
-        status: { $nin: ['REJECTED', 'CLOSED'] },
+        'tracking.nextFollowUpAt': { $ne: null, $lte: endOfToday },
+        status: { $nin: ['REJECTED', 'CLOSED', 'NO_REQUIREMENT', 'NO_FOLLOW_UP', 'BOUNCED'] },
       }),
 
       // 🟡 WhatsApp Pending
@@ -81,10 +93,26 @@ export async function getStats(req, res) {
         status: { $nin: ['EMAIL_SENT', 'SENT', 'REJECTED', 'CLOSED'] },
       }),
 
-      // 🟢 Applications Sent (Email sent or WhatsApp sent)
+      // 🟢 Applications Sent (Email sent or WhatsApp sent or in follow-up pipeline)
       Job.countDocuments({
         $or: [
-          { status: { $in: ['EMAIL_SENT', 'WHATSAPP_SENT', 'SENT'] } },
+          {
+            status: {
+              $in: [
+                'EMAIL_SENT',
+                'WHATSAPP_SENT',
+                'SENT',
+                'FOLLOW_UP_1_DUE',
+                'FOLLOW_UP_1_SENT',
+                'FOLLOW_UP_2_DUE',
+                'FOLLOW_UP_2_SENT',
+                'FOLLOW_UP',
+                'REPLIED',
+                'INTERVIEW',
+                'NO_REQUIREMENT',
+              ],
+            },
+          },
           { 'email.status': 'sent' },
           { 'whatsapp.status': 'sent' },
         ],
@@ -95,6 +123,18 @@ export async function getStats(req, res) {
 
       // 🎯 Interviews
       Job.countDocuments({ status: 'INTERVIEW' }),
+
+      // 📅 Total Follow-ups Pipeline (Scheduled or active follow-up stage)
+      Job.countDocuments({
+        $or: [
+          { status: { $in: ['FOLLOW_UP', 'FOLLOW_UP_1_DUE', 'FOLLOW_UP_1_SENT', 'FOLLOW_UP_2_DUE', 'FOLLOW_UP_2_SENT'] } },
+          { 'tracking.nextFollowUpAt': { $ne: null } },
+        ],
+        status: { $nin: ['REJECTED', 'CLOSED', 'NO_REQUIREMENT', 'NO_FOLLOW_UP', 'BOUNCED'] },
+      }),
+
+      // 🚫 No Requirement
+      Job.countDocuments({ status: { $in: ['NO_REQUIREMENT', 'NO_FOLLOW_UP'] } }),
     ]);
 
     const queueStatus = await queueManager.getStatus();
@@ -125,6 +165,8 @@ export async function getStats(req, res) {
 
         // CRM dashboard metrics
         followupsDue,
+        followupsScheduled,
+        noRequirement,
         whatsappPending,
         emailsPending,
         applicationsSent,

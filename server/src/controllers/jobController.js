@@ -4,10 +4,12 @@ import { EmailLog } from '../models/EmailLog.js';
 import { Setting } from '../models/Setting.js';
 import {
   personalizeEmail,
+  personalizeFollowUpEmail,
   generateWhatsAppMessage,
   cleanPhoneNumber,
   generateWhatsAppUrl,
 } from '../services/personalization/templateEngine.js';
+
 import { sendEmail } from '../services/mail/mailService.js';
 import {
   normalizeEmail,
@@ -52,14 +54,12 @@ export async function getJobs(req, res) {
     // Quick views
     if (quickFilter) {
       const now = new Date();
-      if (quickFilter === 'followups_due') {
-        const endOfToday = new Date();
-        endOfToday.setHours(23, 59, 59, 999);
+      if (quickFilter === 'followups_due' || quickFilter === 'followups') {
         query.$or = [
-          { 'tracking.nextFollowUpAt': { $ne: null, $lte: endOfToday } },
-          { status: 'FOLLOW_UP' },
+          { status: { $in: ['FOLLOW_UP', 'FOLLOW_UP_1_DUE', 'FOLLOW_UP_1_SENT', 'FOLLOW_UP_2_DUE', 'FOLLOW_UP_2_SENT'] } },
+          { 'tracking.nextFollowUpAt': { $ne: null } },
         ];
-        query.status = { $nin: ['REJECTED', 'CLOSED'] };
+        query.status = { $nin: ['REJECTED', 'CLOSED', 'NO_REQUIREMENT', 'NO_FOLLOW_UP', 'BOUNCED'] };
       } else if (quickFilter === 'whatsapp_pending') {
         query.$or = [
           { status: 'WHATSAPP_PENDING' },
@@ -74,10 +74,26 @@ export async function getJobs(req, res) {
           { 'email.status': 'not_sent' },
           { status: { $in: ['NEW', 'READY_TO_CONTACT', 'REVIEW', 'RESEARCHED', 'APPROVED'] } },
         ];
-        query.status = { $nin: ['EMAIL_SENT', 'SENT', 'REJECTED', 'CLOSED'] };
+        query.status = { $nin: ['EMAIL_SENT', 'SENT', 'REJECTED', 'CLOSED', 'BOUNCED'] };
       } else if (quickFilter === 'applications_sent') {
         query.$or = [
-          { status: { $in: ['EMAIL_SENT', 'WHATSAPP_SENT', 'SENT'] } },
+          {
+            status: {
+              $in: [
+                'EMAIL_SENT',
+                'WHATSAPP_SENT',
+                'SENT',
+                'FOLLOW_UP_1_DUE',
+                'FOLLOW_UP_1_SENT',
+                'FOLLOW_UP_2_DUE',
+                'FOLLOW_UP_2_SENT',
+                'FOLLOW_UP',
+                'REPLIED',
+                'INTERVIEW',
+                'NO_REQUIREMENT',
+              ],
+            },
+          },
           { 'email.status': 'sent' },
           { 'whatsapp.status': 'sent' },
         ];
@@ -85,6 +101,8 @@ export async function getJobs(req, res) {
         query.status = 'REPLIED';
       } else if (quickFilter === 'interviews') {
         query.status = 'INTERVIEW';
+      } else if (quickFilter === 'no_requirement') {
+        query.status = { $in: ['NO_REQUIREMENT', 'NO_FOLLOW_UP'] };
       } else if (quickFilter === 'bounced') {
         query.$or = [
           { status: 'BOUNCED' },
@@ -958,6 +976,266 @@ export async function markJobBounced(req, res) {
   }
 }
 
+/**
+ * Mark a company / job as NO_REQUIREMENT (permanently suppresses automated follow-up).
+ */
+export async function markNoRequirement(req, res) {
+  try {
+    const { id } = req.params;
+    const { notes = 'HR replied that there is no active opening or requirement.' } = req.body || {};
+
+    const job = await Job.findById(id);
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    job.status = 'NO_REQUIREMENT';
+    if (!job.tracking) job.tracking = {};
+    job.tracking.status = 'NO_REQUIREMENT';
+    job.tracking.nextFollowUpAt = null; // Permanently suppress follow-up!
+    job.tracking.notes = notes;
+
+    if (!job.timeline) job.timeline = [];
+    job.timeline.push({
+      action: 'NO_REQUIREMENT_RECORDED',
+      title: 'HR: No Opening / No Requirement',
+      description: notes,
+      createdAt: new Date(),
+      meta: { notes, suppressed: true },
+    });
+
+    await job.save();
+
+    res.json({
+      success: true,
+      message: `Marked "${job.company}" as NO_REQUIREMENT (follow-ups permanently suppressed)`,
+      job,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Sends a standardized follow-up email directly to the HR contact.
+ */
+export async function sendFollowUpEmail(req, res) {
+  try {
+    const { id } = req.params;
+    const job = await Job.findById(id);
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    const recipient = (job.contact?.email || job.hrEmail || '').trim();
+    if (!recipient || !recipient.includes('@')) {
+      return res.status(400).json({ success: false, error: 'A valid recipient email is required' });
+    }
+
+    // Safety guard: do not send follow-up to bounced or no-requirement contacts
+    if (['BOUNCED', 'INVALID_EMAIL', 'NO_REQUIREMENT', 'NO_FOLLOW_UP', 'REJECTED', 'CLOSED'].includes(job.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot send follow-up: Job is currently marked as ${job.status}`,
+      });
+    }
+
+    const settings = await Setting.getSettings();
+    const rendered = personalizeFollowUpEmail(job, settings);
+
+    const subject = req.body?.subject || rendered.subject;
+    const textBody = req.body?.body || rendered.textBody;
+    const htmlBody = textBody
+      .split('\n\n')
+      .map((p) => `<p style="margin: 0 0 14px 0; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`)
+      .join('');
+
+    const sendResult = await sendEmail({
+      to: recipient,
+      subject,
+      htmlBody,
+      textBody,
+      customResumePath: settings.resumePath,
+      isTest: false,
+    });
+
+    // Update Contact
+    const normEmail = recipient.toLowerCase();
+    let contact = await Contact.findOne({ email: normEmail });
+    if (contact) {
+      contact.lastContactedAt = new Date();
+      contact.totalEmailsSent = (contact.totalEmailsSent || 0) + 1;
+      await contact.save();
+    }
+
+    // Record in EmailLog
+    await EmailLog.create({
+      jobId: job._id,
+      contactId: contact ? contact._id : null,
+      recipient,
+      subject,
+      body: htmlBody,
+      status: 'SENT',
+      sentAt: new Date(),
+      messageId: sendResult.messageId,
+      isDryRun: sendResult.isDryRun,
+      hasAttachment: sendResult.hasAttachment,
+      attachmentName: sendResult.attachmentName || 'resume.pdf',
+    });
+
+    // Determine next follow-up status & cadence (3 days, then 5-7 days, then stop)
+    const currentFollowUpCount = (job.tracking?.followUpCount || 0) + 1;
+    let nextStatus = 'FOLLOW_UP_1_SENT';
+    let nextFollowUpDate = null;
+
+    if (currentFollowUpCount >= 2) {
+      nextStatus = 'FOLLOW_UP_2_SENT';
+      // After 2 follow-ups, stop scheduling further follow-ups
+      nextFollowUpDate = null;
+    } else {
+      nextStatus = 'FOLLOW_UP_1_SENT';
+      // Schedule follow-up 2 due in 6 calendar days
+      nextFollowUpDate = new Date();
+      nextFollowUpDate.setDate(nextFollowUpDate.getDate() + 6);
+    }
+
+    job.status = nextStatus;
+    if (!job.tracking) job.tracking = {};
+    job.tracking.status = nextStatus;
+    job.tracking.lastContactedAt = new Date();
+    job.tracking.followUpCount = currentFollowUpCount;
+    job.tracking.nextFollowUpAt = nextFollowUpDate;
+
+    if (!job.timeline) job.timeline = [];
+    job.timeline.push({
+      action: 'FOLLOW_UP_SENT',
+      title: `Follow-up ${currentFollowUpCount} Sent via Email`,
+      description: `Follow-up email sent to ${recipient} (Subject: "${subject}")`,
+      createdAt: new Date(),
+      meta: {
+        messageId: sendResult.messageId,
+        followUpCount: currentFollowUpCount,
+        nextFollowUpAt: nextFollowUpDate,
+        isDryRun: sendResult.isDryRun,
+      },
+    });
+
+    await job.save();
+
+    res.json({
+      success: true,
+      message: `Follow-up ${currentFollowUpCount} email sent to ${recipient}`,
+      job,
+      nextFollowUpAt: nextFollowUpDate,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Applies the standardized follow-up plan based on the user's verified sending log.
+ */
+export async function applyFollowUpPlan(req, res) {
+  try {
+    const SPECIFIC_FOLLOW_UPS = [
+      { name: 'EncodeDots', date: '2026-09-30' },
+      { name: 'Innovative Glance', date: '2026-09-29', emailFilter: 'hello@' },
+      { name: 'Vrinsoft', date: '2026-09-29' },
+      { name: 'Briskstar', date: '2026-09-29' },
+      { name: 'PixScale', date: '2026-09-29' },
+      { name: 'Patel-Apps', date: '2026-09-29' },
+      { name: 'SandCup', date: '2026-09-29' },
+      { name: 'NetFillip', date: '2026-09-29' },
+      { name: 'RiseoTech', date: '2026-09-29' },
+      { name: 'TM Systems', date: '2026-09-29' },
+      { name: 'Sweken', date: '2026-09-29' },
+      { name: 'TechIntact', date: '2026-09-29' },
+      { name: 'Webs Optimization', date: '2026-09-29' },
+      { name: 'Evoort Solutions', date: '2026-09-29' },
+      { name: 'TriState', date: '2026-09-29' },
+      { name: 'Aipxperts', date: '2026-09-29' },
+      { name: 'Openskale', date: '2026-09-29' },
+      { name: 'CCTech', date: '2026-09-29' },
+      { name: 'Multitrade Softech', date: '2026-09-29' },
+      { name: 'Syndell Technologies', date: '2026-09-29' },
+      { name: 'HyperScale Systems', date: '2026-09-29' },
+    ];
+
+    const GENERAL_COMPANIES = [
+      'WebAppHealing', 'Saturncube', 'Codage Habitation', 'De Soto Technologies',
+      'Implies Solution', 'Xopple Infotech', 'Emipro', 'DIT Interactive',
+      'Inextrix Technologies', 'Saleshandy', 'Sprybit', '56N Software',
+      'Siyana Info Solutions', 'Pixelque Software', 'Shine Infosoft', 'Ivalue Systech',
+      'KBA Systems', 'Superworks', 'Aims Infosoft', 'Uniqual Itech',
+      'Propelius Technologies', 'Xomic Infotech', 'Appitsimple Infotek', 'Qable',
+      'Brilworks Software', 'Ishitva Robotic Systems'
+    ];
+
+    let specificUpdated = 0;
+    for (const item of SPECIFIC_FOLLOW_UPS) {
+      const query = { company: { $regex: item.name, $options: 'i' } };
+      if (item.emailFilter) {
+        query.hrEmail = { $regex: item.emailFilter, $options: 'i' };
+      }
+      const dueDate = new Date(`${item.date}T10:00:00+05:30`);
+      const result = await Job.updateMany(
+        query,
+        {
+          $set: {
+            jobType: 'specific_opening',
+            status: 'FOLLOW_UP_1_DUE',
+            'tracking.status': 'FOLLOW_UP_1_DUE',
+            'tracking.nextFollowUpAt': dueDate,
+          },
+        }
+      );
+      specificUpdated += result.modifiedCount;
+    }
+
+    let generalUpdated = 0;
+    for (const comp of GENERAL_COMPANIES) {
+      const result = await Job.updateMany(
+        { company: { $regex: comp.split(' ')[0], $options: 'i' } },
+        {
+          $set: {
+            jobType: 'general_inquiry',
+            'tracking.nextFollowUpAt': null, // Suppress automated follow-ups for general inquiries
+          },
+        }
+      );
+      generalUpdated += result.modifiedCount;
+    }
+
+    // Suppress follow-ups on known bounced addresses
+    const bouncedResult = await Job.updateMany(
+      {
+        $or: [
+          { status: 'BOUNCED' },
+          { hrEmail: { $in: ['careers@novasolutions.tech', 'careers@novasolutions.com', 'careers@innovativeglance.com', 'dev@ansorbit.com', 'careers@zenithcloudlabs.com', 'pooja.patel@zenithcloud.io'] } }
+        ]
+      },
+      {
+        $set: {
+          status: 'BOUNCED',
+          'tracking.status': 'BOUNCED',
+          'tracking.nextFollowUpAt': null,
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Follow-up plan successfully synchronized with CRM',
+      specificUpdated,
+      generalUpdated,
+      bouncedSuppressed: bouncedResult.modifiedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getJobs,
   getJobById,
@@ -968,6 +1246,9 @@ export default {
   copyWhatsAppData,
   markWhatsAppSent,
   scheduleFollowUp,
+  markNoRequirement,
+  sendFollowUpEmail,
+  applyFollowUpPlan,
   addActivityLog,
   updateJobStatus,
   approveJob,
@@ -980,3 +1261,4 @@ export default {
   getDuplicateStatsController,
   markJobBounced,
 };
+

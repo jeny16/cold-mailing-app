@@ -1,4 +1,10 @@
 #!/bin/bash
+
+# Source user profile to get node/npm/brew in PATH when double-clicking
+source ~/.bash_profile 2>/dev/null || true
+source ~/.zshrc 2>/dev/null || true
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 # Move to the directory where this script resides
 cd "$(dirname "$0")"
 

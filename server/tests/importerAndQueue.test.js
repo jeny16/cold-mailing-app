@@ -79,7 +79,7 @@ describe('JSON Importer & Persistent Queue Integration', () => {
 
   it('should process queue and respect daily limit', async () => {
     // Approve the valid jobs
-    await Job.updateMany({ isDuplicate: false, status: 'REVIEW' }, { $set: { status: 'APPROVED' } });
+    await Job.updateMany({ isDuplicate: false }, { $set: { status: 'APPROVED' } });
 
     const approvedCount = await Job.countDocuments({ status: 'APPROVED' });
     expect(approvedCount).toBeGreaterThan(0);

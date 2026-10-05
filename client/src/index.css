@@ -270,3 +270,465 @@ body {
 .action-btn-clean:hover {
   transform: translateY(-1px);
 }
+
+/* ==========================================================================
+   Kanban Board Styles
+   ========================================================================== */
+.kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 8px 4px 16px 4px;
+  align-items: flex-start;
+  min-height: 520px;
+}
+
+.kanban-column {
+  flex: 0 0 280px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  max-height: 75vh;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.kanban-column-header {
+  padding: 12px 14px;
+  border-radius: 11px 11px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.kanban-column-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.kanban-column-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+}
+
+.kanban-column-body {
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.kanban-empty {
+  padding: 30px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kanban-card {
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -2px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.kanban-card--overdue {
+  border-color: #fca5a5;
+  background: #fffafa;
+}
+
+.kanban-card--today {
+  border-color: #fde047;
+  background: #fffdf5;
+}
+
+.kanban-card-alert {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  display: inline-block;
+}
+
+.kanban-card-alert--overdue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.kanban-card-alert--today {
+  background: #fef08a;
+  color: #854d0e;
+}
+
+.kanban-card-company {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.kanban-card-role {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.kanban-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 8px;
+}
+
+.kanban-card-channels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.kanban-ch-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.kanban-ch-icon--dim {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.kanban-ch-icon--active {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.kanban-ch-icon--wa {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.kanban-ch-icon--followup {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.kanban-ch-icon--overdue {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+.kanban-ch-icon--today {
+  background: #fef9c3;
+  color: #ca8a04;
+  border: 1px solid #fde047;
+}
+
+.kanban-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+/* ==========================================================================
+   Calendar View Styles
+   ========================================================================== */
+.cal-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cal-nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #334155;
+  transition: all 0.15s ease;
+}
+
+.cal-nav-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.cal-month-label {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  min-width: 150px;
+  text-align: center;
+}
+
+.cal-today-btn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  cursor: pointer;
+  color: #1e293b;
+  transition: all 0.15s ease;
+}
+
+.cal-today-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cal-legend-item {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cal-dow-row {
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.cal-dow {
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-align: center;
+  background: #f8fafc;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cal-day {
+  background: #ffffff;
+  min-height: 100px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.15s ease;
+}
+
+.cal-day:hover {
+  background: #fbfcfe;
+}
+
+.cal-day--other-month {
+  background: #f8fafc;
+  opacity: 0.6;
+}
+
+.cal-day--weekend {
+  background: #fafafc;
+}
+
+.cal-day--today {
+  background: #eff6ff;
+}
+
+.cal-day-number {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+  align-self: flex-end;
+}
+
+.cal-day-number--today {
+  background: #2563eb;
+  color: #ffffff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.cal-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cal-event {
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.cal-event:hover {
+  filter: brightness(0.95);
+  transform: translateX(1px);
+}
+
+.cal-event-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cal-event-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-event-more {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  padding: 1px 4px;
+}
+
+.cal-upcoming {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.cal-upcoming-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.cal-upcoming-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.cal-upcoming-item {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #e2e8f0;
+}
+
+.cal-upcoming-item:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+}
+
+.cal-upcoming-company {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cal-upcoming-role {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.cal-upcoming-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.cal-upcoming-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+

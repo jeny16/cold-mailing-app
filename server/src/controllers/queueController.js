@@ -56,10 +56,63 @@ export async function retryAll(req, res) {
   }
 }
 
+export async function removeJob(req, res) {
+  try {
+    const { jobId } = req.params;
+    const { reason } = req.body || {};
+    const job = await queueManager.removeJobFromQueue(jobId, reason);
+    res.json({ success: true, message: 'Job removed from queue', job });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+export async function verifyQueue(req, res) {
+  try {
+    const result = await queueManager.verifyQueuedJobs();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function dismissFailed(req, res) {
+  try {
+    const { jobId } = req.params;
+    const job = await queueManager.dismissFailedJob(jobId);
+    res.json({ success: true, message: 'Job dismissed from failed list', job });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+export async function dismissAllFailed(req, res) {
+  try {
+    const result = await queueManager.dismissAllFailed();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function queueFollowUps(req, res) {
+  try {
+    const result = await queueManager.queueAllFollowUps();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getQueueStatus,
   startQueue,
   pauseQueue,
   retryJob,
   retryAll,
+  removeJob,
+  verifyQueue,
+  dismissFailed,
+  dismissAllFailed,
 };
+

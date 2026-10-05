@@ -17,6 +17,17 @@ Best regards,
 
 const DEFAULT_WHATSAPP_TEMPLATE = `Hi {{hrNameOrHiringTeam}}, I'm {{senderName}}, a Full Stack Developer (React / Node.js). I noticed the opening for {{role}} at {{company}} and would love to connect. You can view my portfolio at {{portfolioUrl}}. May I share my resume with you?`;
 
+const DEFAULT_FOLLOW_UP_SUBJECT_TEMPLATE = 'Following up: Application for {{role}} – {{company}}';
+
+const DEFAULT_FOLLOW_UP_BODY_TEMPLATE = `Hi {{hrNameOrHiringTeam}},
+
+I wanted to follow up on my application for the {{role}} position that I shared recently. I remain interested in the opportunity and would be happy to provide any additional information required.
+
+Please let me know if there is any update regarding the application.
+
+Best regards,
+{{senderName}}`;
+
 const SettingSchema = new mongoose.Schema(
   {
     key: {
@@ -26,23 +37,23 @@ const SettingSchema = new mongoose.Schema(
     },
     senderName: {
       type: String,
-      default: () => process.env.SENDER_NAME || 'Jeny Pansuriya',
+      default: () => process.env.SENDER_NAME,
     },
     senderEmail: {
       type: String,
-      default: () => process.env.SENDER_EMAIL || 'jeny.pansuriya@example.com',
+      default: () => process.env.SENDER_EMAIL,
     },
     senderPhone: {
       type: String,
-      default: () => process.env.SENDER_PHONE || '+91 9876543210',
+      default: () => process.env.SENDER_PHONE,
     },
     portfolioUrl: {
       type: String,
-      default: () => process.env.PORTFOLIO_URL || 'http://jenypansuriya.in/',
+      default: () => process.env.PORTFOLIO_URL,
     },
     githubUrl: {
       type: String,
-      default: () => process.env.GITHUB_URL || 'https://github.com/jenypansuriya',
+      default: () => process.env.GITHUB_URL,
     },
     resumePath: {
       type: String,
@@ -56,10 +67,19 @@ const SettingSchema = new mongoose.Schema(
       type: String,
       default: DEFAULT_BODY_TEMPLATE,
     },
+    followUpSubjectTemplate: {
+      type: String,
+      default: DEFAULT_FOLLOW_UP_SUBJECT_TEMPLATE,
+    },
+    followUpBodyTemplate: {
+      type: String,
+      default: DEFAULT_FOLLOW_UP_BODY_TEMPLATE,
+    },
     whatsappMessageTemplate: {
       type: String,
       default: DEFAULT_WHATSAPP_TEMPLATE,
     },
+
     dailyLimit: {
       type: Number,
       default: () => parseInt(process.env.DAILY_EMAIL_LIMIT, 10) || 50,

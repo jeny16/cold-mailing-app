@@ -303,6 +303,12 @@ const JobSchema = new mongoose.Schema(
         'REJECTED',
         'NO_RESPONSE',
         'FOLLOW_UP',
+        'FOLLOW_UP_1_DUE',
+        'FOLLOW_UP_1_SENT',
+        'FOLLOW_UP_2_DUE',
+        'FOLLOW_UP_2_SENT',
+        'NO_REQUIREMENT',
+        'NO_FOLLOW_UP',
         'CLOSED',
         // Legacy statuses supported for queue engine
         'REVIEW',
@@ -316,6 +322,7 @@ const JobSchema = new mongoose.Schema(
         'BOUNCED',
         'INVALID_EMAIL',
       ],
+
       default: 'NEW',
       index: true,
     },

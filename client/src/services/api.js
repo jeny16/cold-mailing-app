@@ -32,7 +32,11 @@ export const JobsAPI = {
   cleanupDuplicates: () => api.post('/jobs/cleanup-duplicates').then((res) => res.data),
   getDuplicateStats: () => api.get('/jobs/duplicate-stats').then((res) => res.data),
   markBounced: (id, data = {}) => api.post(`/jobs/${id}/mark-bounced`, data).then((res) => res.data),
+  markNoRequirement: (id, notes = '') => api.post(`/jobs/${id}/no-requirement`, { notes }).then((res) => res.data),
+  sendFollowUp: (id, data = {}) => api.post(`/jobs/${id}/send-followup`, data).then((res) => res.data),
+  applyFollowUpPlan: () => api.post('/jobs/apply-followup-plan').then((res) => res.data),
 };
+
 
 export const QueueAPI = {
   getStatus: () => api.get('/queue').then((res) => res.data),
@@ -40,7 +44,13 @@ export const QueueAPI = {
   pauseQueue: () => api.post('/queue/pause').then((res) => res.data),
   retryJob: (jobId) => api.post(`/queue/retry/${jobId}`).then((res) => res.data),
   retryAll: () => api.post('/queue/retry-all').then((res) => res.data),
+  removeFromQueue: (jobId, reason) => api.post(`/queue/remove/${jobId}`, { reason }).then((res) => res.data),
+  verifyQueue: () => api.post('/queue/verify').then((res) => res.data),
+  dismissFailed: (jobId) => api.post(`/queue/dismiss/${jobId}`).then((res) => res.data),
+  dismissAllFailed: () => api.post('/queue/dismiss-all-failed').then((res) => res.data),
+  queueFollowUps: () => api.post('/queue/queue-followups').then((res) => res.data),
 };
+
 
 export const EmailsAPI = {
   getEmails: (params) => api.get('/emails', { params }).then((res) => res.data),

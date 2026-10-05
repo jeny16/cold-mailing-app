@@ -1,3 +1,4 @@
+console.log('Starting app.js');
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -78,7 +79,7 @@ export async function startServer(port = process.env.PORT || 5080, host = proces
     await connectDB();
     await queueManager.recoverOrphanedJobs();
 
-    // Auto-record dev@ansorbit.com if not already recorded
+    // Auto-record known bounce addresses if not already recorded or update if queued
     try {
       const existingAnsorbit = await Job.findOne({
         $or: [
@@ -94,9 +95,27 @@ export async function startServer(port = process.env.PORT || 5080, host = proces
         });
         logger.info('[Init] Successfully recorded dev@ansorbit.com as BOUNCED');
       }
+
+      // Automatically update or record careers@novasolutions.tech as BOUNCED to purge from queue
+      const existingNova = await Job.findOne({
+        $or: [
+          { normalizedHrEmail: 'careers@novasolutions.tech' },
+          { hrEmail: 'careers@novasolutions.tech' },
+        ],
+      });
+      if (!existingNova || existingNova.status !== 'BOUNCED') {
+        await markEmailAsBounced({
+          email: 'careers@novasolutions.tech',
+          jobId: existingNova?._id,
+          reason: "DNS Error: DNS type 'mx' lookup of novasolutions.tech responded with code SERVFAIL",
+          rawError: "The response was: DNS Error: DNS type 'mx' lookup of novasolutions.tech responded with code SERVFAIL",
+        });
+        logger.info('[Init] Successfully recorded careers@novasolutions.tech as BOUNCED (DNS SERVFAIL)');
+      }
     } catch (seedErr) {
       logger.debug({ err: seedErr.message }, '[Init] Skip auto-record');
     }
+
 
     // Start incoming folder watcher
     startFolderWatcher();

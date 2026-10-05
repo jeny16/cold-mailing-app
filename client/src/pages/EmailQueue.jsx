@@ -11,7 +11,10 @@ import {
   Progress,
   Alert,
   message,
+  notification,
   Tabs,
+  Popconfirm,
+  Tooltip,
 } from 'antd';
 import {
   PlayCircleOutlined,
@@ -22,6 +25,9 @@ import {
   WarningOutlined,
   CloseCircleOutlined,
   ReloadOutlined,
+  DeleteOutlined,
+  SafetyCertificateOutlined,
+  ClearOutlined,
 } from '@ant-design/icons';
 import { QueueAPI } from '../services/api';
 
@@ -31,6 +37,7 @@ export function EmailQueue() {
   const [queueData, setQueueData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [verifyingQueue, setVerifyingQueue] = useState(false);
 
   const fetchQueue = async () => {
     try {
@@ -76,6 +83,37 @@ export function EmailQueue() {
     }
   };
 
+  const handleRemoveJob = async (jobId) => {
+    try {
+      await QueueAPI.removeFromQueue(jobId, 'Removed from queue by user');
+      message.success('Job removed from queue');
+      fetchQueue();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to remove job');
+    }
+  };
+
+  const handleVerifyQueue = async () => {
+    try {
+      setVerifyingQueue(true);
+      const res = await QueueAPI.verifyQueue();
+      if (res.removedCount > 0) {
+        notification.warning({
+          message: 'Invalid Emails Purged from Queue',
+          description: `Checked ${res.totalChecked} queued email(s). Automatically removed ${res.removedCount} invalid domain(s) (e.g. DNS SERVFAIL or missing MX) so they will not be sent.`,
+          duration: 6,
+        });
+      } else {
+        message.success(`Verified ${res.totalChecked} queued email(s) — all have active MX mail servers!`);
+      }
+      fetchQueue();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to verify queue');
+    } finally {
+      setVerifyingQueue(false);
+    }
+  };
+
   const handleRetryJob = async (jobId) => {
     try {
       await QueueAPI.retryJob(jobId);
@@ -89,10 +127,37 @@ export function EmailQueue() {
   const handleRetryAll = async () => {
     try {
       const res = await QueueAPI.retryAll();
-      message.success(`Requeued ${res.modifiedCount} failed job(s)`);
+      if (res.bouncedCount > 0) {
+        notification.info({
+          message: 'Retry Completed with DNS Filter',
+          description: `Requeued ${res.modifiedCount} valid job(s). Permanently marked ${res.bouncedCount} dead domains as BOUNCED.`,
+        });
+      } else {
+        message.success(`Requeued ${res.modifiedCount} failed job(s)`);
+      }
       fetchQueue();
     } catch (err) {
       message.error('Failed to retry all jobs');
+    }
+  };
+
+  const handleDismissFailed = async (jobId) => {
+    try {
+      await QueueAPI.dismissFailed(jobId);
+      message.info('Failed job dismissed');
+      fetchQueue();
+    } catch (err) {
+      message.error(err.response?.data?.error || 'Failed to dismiss job');
+    }
+  };
+
+  const handleDismissAllFailed = async () => {
+    try {
+      const res = await QueueAPI.dismissAllFailed();
+      message.info(`Dismissed ${res.dismissedCount} failed jobs`);
+      fetchQueue();
+    } catch (err) {
+      message.error('Failed to dismiss all failed jobs');
     }
   };
 
@@ -101,6 +166,19 @@ export function EmailQueue() {
   const sentToday = queueData?.sentToday || 0;
   const dailyLimit = queueData?.dailyLimit || 20;
   const progressPercent = Math.min(100, Math.round((sentToday / dailyLimit) * 100));
+
+  const isDnsOrPermanentFailure = (err = '') => {
+    const s = (err || '').toLowerCase();
+    return (
+      s.includes('dns error') ||
+      s.includes('servfail') ||
+      s.includes('nxdomain') ||
+      s.includes('no mx') ||
+      s.includes('user does not exist') ||
+      s.includes('address not found') ||
+      s.includes('550 5.1.1')
+    );
+  };
 
   const queuedColumns = [
     {
@@ -139,6 +217,25 @@ export function EmailQueue() {
         </Tag>
       ),
     },
+    {
+      title: 'Action',
+      key: 'action',
+      width: 140,
+      render: (_, record) => (
+        <Popconfirm
+          title="Remove from queue?"
+          description={`Remove application for ${record.company} from the dispatch queue?`}
+          onConfirm={() => handleRemoveJob(record._id)}
+          okText="Remove"
+          cancelText="Cancel"
+          okButtonProps={{ danger: true }}
+        >
+          <Button size="small" danger icon={<DeleteOutlined />}>
+            Remove
+          </Button>
+        </Popconfirm>
+      ),
+    },
   ];
 
   const failedColumns = [
@@ -168,27 +265,56 @@ export function EmailQueue() {
       title: 'Failure Reason',
       dataIndex: 'lastError',
       key: 'lastError',
-      render: (err) => (
-        <Text type="danger" style={{ fontSize: 13 }}>
-          {err || 'Delivery failed'}
-        </Text>
-      ),
+      render: (err) => {
+        const isDns = isDnsOrPermanentFailure(err);
+        return (
+          <Space direction="vertical" size={2}>
+            <Text orientation="horizontal" type="danger" style={{ fontSize: 13 }}>
+              {err || 'Delivery failed'}
+            </Text>
+            {isDns && <Tag color="error">Invalid Domain / DNS Error</Tag>}
+          </Space>
+        );
+      },
     },
     {
       title: 'Action',
       key: 'action',
-      render: (_, record) => (
-        <Button
-          size="small"
-          type="primary"
-          icon={<RedoOutlined />}
-          onClick={() => handleRetryJob(record._id)}
-        >
-          Retry
-        </Button>
-      ),
+      width: 180,
+      render: (_, record) => {
+        const cannotRetry = isDnsOrPermanentFailure(record.lastError);
+        return (
+          <Space orientation="horizontal" size="small">
+            <Tooltip
+              title={
+                cannotRetry
+                  ? 'Cannot retry: recipient domain has no valid MX records or address does not exist'
+                  : 'Retry delivery'
+              }
+            >
+              <Button
+                size="small"
+                type="primary"
+                icon={<RedoOutlined />}
+                disabled={cannotRetry}
+                onClick={() => handleRetryJob(record._id)}
+              >
+                Retry
+              </Button>
+            </Tooltip>
+            <Button
+              size="small"
+              icon={<DeleteOutlined />}
+              onClick={() => handleDismissFailed(record._id)}
+            >
+              Dismiss
+            </Button>
+          </Space>
+        );
+      },
     },
   ];
+
 
   return (
     <div>
@@ -205,6 +331,15 @@ export function EmailQueue() {
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchQueue}>
             Refresh
+          </Button>
+
+          <Button
+            icon={<SafetyCertificateOutlined />}
+            onClick={handleVerifyQueue}
+            loading={verifyingQueue}
+            style={{ borderColor: '#52c41a', color: '#389e0d' }}
+          >
+            Verify DNS & Purge Invalid
           </Button>
 
           {isRunning ? (
@@ -228,6 +363,15 @@ export function EmailQueue() {
           )}
         </Space>
       </div>
+
+      <Alert
+        type="info"
+        showIcon
+        icon={<SafetyCertificateOutlined style={{ color: '#52c41a' }} />}
+        message="Active DNS MX Pre-Check & Protection"
+        description="All recipient domains are verified before sending. Addresses with broken or failing DNS (such as SERVFAIL, NXDOMAIN, or missing MX mail servers) are automatically blocked and purged from the queue to protect your sender reputation and prevent Gmail 48-hour retry loops."
+        style={{ marginBottom: 18 }}
+      />
 
       {sentToday >= dailyLimit && (
         <Alert
@@ -297,7 +441,7 @@ export function EmailQueue() {
 
               {queueData?.failedJobs?.length > 0 && (
                 <Button block icon={<RedoOutlined />} onClick={handleRetryAll}>
-                  Retry All Failed ({queueData.failedJobs.length})
+                  Retry Valid Failed ({queueData.failedJobs.length})
                 </Button>
               )}
             </Space>
@@ -340,9 +484,12 @@ export function EmailQueue() {
               children: (
                 <div>
                   {queueData?.failedJobs?.length > 0 && (
-                    <div style={{ marginBottom: 12, textAlign: 'right' }}>
+                    <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <Button icon={<RedoOutlined />} onClick={handleRetryAll}>
-                        Retry All Failed
+                        Retry Valid Failed
+                      </Button>
+                      <Button danger icon={<ClearOutlined />} onClick={handleDismissAllFailed}>
+                        Dismiss All Failed
                       </Button>
                     </div>
                   )}
@@ -360,6 +507,7 @@ export function EmailQueue() {
           ]}
         />
       </Card>
+
     </div>
   );
 }

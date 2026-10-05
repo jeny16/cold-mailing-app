@@ -134,6 +134,32 @@ export function generateWhatsAppMessage(job = {}, settings = {}) {
 }
 
 /**
+ * Renders standardized follow-up subject and body for a job.
+ */
+export function personalizeFollowUpEmail(job, settings = {}) {
+  const context = buildTemplateContext(job, settings);
+
+  const rawSubject = settings.followUpSubjectTemplate || 'Following up: Application for {{role}} – {{company}}';
+  const rawBody = settings.followUpBodyTemplate ||
+    `Hi {{hrNameOrHiringTeam}},\n\nI wanted to follow up on my application for the {{role}} position that I shared recently. I remain interested in the opportunity and would be happy to provide any additional information required.\n\nPlease let me know if there is any update regarding the application.\n\nBest regards,\n{{senderName}}`;
+
+  const subject = renderTemplate(rawSubject, context);
+  let textBody = renderTemplate(rawBody, context);
+  textBody = cleanSignature(textBody, context.senderName);
+
+  const htmlBody = textBody
+    .split('\n\n')
+    .map((paragraph) => `<p style="margin: 0 0 14px 0; line-height: 1.6;">${paragraph.replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+
+  return {
+    subject,
+    textBody,
+    htmlBody,
+  };
+}
+
+/**
  * Generates the WhatsApp Click-to-Chat URL
  * Example: https://wa.me/917600436632?text=...
  */
@@ -147,7 +173,9 @@ export default {
   renderTemplate,
   buildTemplateContext,
   personalizeEmail,
+  personalizeFollowUpEmail,
   cleanPhoneNumber,
   generateWhatsAppMessage,
   generateWhatsAppUrl,
 };
+

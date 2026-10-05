@@ -53,7 +53,11 @@ export function isBounceMessage({ rawFrom = '', subject = '', bodyText = '' }) {
     subjectLower.includes('returned mail') ||
     subjectLower.includes('delivery failure') ||
     subjectLower.includes('undeliverable') ||
-    subjectLower.includes('could not be delivered');
+    subjectLower.includes('could not be delivered') ||
+    subjectLower.includes('delivery incomplete') ||
+    subjectLower.includes('message not delivered') ||
+    subjectLower.includes('delivery delay') ||
+    subjectLower.includes('problem delivering');
 
   const isBounceBody =
     bodyLower.includes('address not found') ||
@@ -65,7 +69,16 @@ export function isBounceMessage({ rawFrom = '', subject = '', bodyText = '' }) {
     bodyLower.includes('user unknown') ||
     bodyLower.includes('no such user') ||
     bodyLower.includes('mailbox unavailable') ||
-    bodyLower.includes('recipient address rejected');
+    bodyLower.includes('recipient address rejected') ||
+    bodyLower.includes('dns error') ||
+    bodyLower.includes('servfail') ||
+    bodyLower.includes('nxdomain') ||
+    bodyLower.includes('message not delivered') ||
+    bodyLower.includes('there was a problem delivering') ||
+    bodyLower.includes('temporary problem delivering') ||
+    bodyLower.includes('delivery incomplete') ||
+    bodyLower.includes('mx lookup') ||
+    bodyLower.includes('mx record');
 
   return (isFromDaemon || isBounceSubject) && (isBounceSubject || isBounceBody);
 }
@@ -79,6 +92,7 @@ export function extractBouncedRecipient(messageText = '', { rawFrom = '', subjec
 
   // 1. Common delivery failure regex patterns
   const patterns = [
+    /(?:there was a problem delivering your message to|there was a temporary problem delivering your message to|problem delivering your message to)\s*<*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>*/i,
     /(?:your message wasn'?t delivered to|wasn'?t delivered to|could not be delivered to|delivery to the following recipient(?:s)? failed|failed permanently:?|failed to deliver to:?\s*<*|unable to deliver to:?\s*<*|failed-recipient:?\s*<*)\s*<*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>*/i,
     /Final-Recipient:\s*(?:rfc822;)?\s*<*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>*/i,
     /Original-Recipient:\s*(?:rfc822;)?\s*<*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>*/i,
@@ -130,27 +144,37 @@ export function extractBouncedRecipient(messageText = '', { rawFrom = '', subjec
 export function extractBounceReason(messageText = '') {
   if (!messageText) return '550 5.1.1 User does not exist - Address not found';
 
-  // Check remote server response snippet
-  const remoteServerMatch = messageText.match(/response from the remote server was:\s*([^\r\n]+)/i);
-  const addressNotFound = messageText.includes('Address not found') || messageText.includes("couldn't be found");
-
-  if (remoteServerMatch && remoteServerMatch[1]) {
-    const detail = remoteServerMatch[1].trim().replace(/[-–\s]+$/, '');
+  // Check "The response was:" or "response was:" (common in Gmail DNS failures and remote bounces)
+  const responseMatch = messageText.match(/(?:The response was|response was|response from the remote server was):\s*([^\r\n]+)/i);
+  if (responseMatch && responseMatch[1]) {
+    const detail = responseMatch[1].trim().replace(/[-–\s]+$/, '');
+    const addressNotFound = messageText.includes('Address not found') || messageText.includes("couldn't be found");
     return addressNotFound ? `Address not found (${detail})` : detail;
+  }
+
+  // Check explicit DNS Error line
+  const dnsErrorMatch = messageText.match(/(DNS Error:[^\r\n]+)/i);
+  if (dnsErrorMatch && dnsErrorMatch[1]) {
+    return dnsErrorMatch[1].trim();
   }
 
   // Check 5xx status codes (e.g. 550 5.1.1)
   const codeMatch = messageText.match(/\b(5\d{2}\s+(?:5\.\d+\.\d+)?\s*[^.\r\n]+)/i);
   if (codeMatch && codeMatch[1]) {
     const codeDetail = codeMatch[1].trim().replace(/[-–\s]+$/, '');
+    const addressNotFound = messageText.includes('Address not found') || messageText.includes("couldn't be found");
     return addressNotFound ? `Address not found (${codeDetail})` : codeDetail;
+  }
+
+  if (messageText.includes('Delivery incomplete') || messageText.includes('temporary problem delivering')) {
+    return 'Delivery incomplete - Temporary remote server/DNS failure';
   }
 
   if (messageText.includes('User does not exist') || messageText.includes('user does not exist')) {
     return '550 5.1.1 User does not exist - Address not found';
   }
 
-  if (addressNotFound) {
+  if (messageText.includes('Address not found') || messageText.includes("couldn't be found")) {
     return 'Address not found - Unable to receive mail';
   }
 
@@ -164,6 +188,7 @@ export function extractBounceReason(messageText = '') {
 
   return '550 5.1.1 Delivery failed (Undelivered / Bounced)';
 }
+
 
 /**
  * Execute raw IMAP command on TLS socket with timeout
@@ -472,30 +497,77 @@ export async function checkInboxForReplies(options = {}) {
                   }
                 }
 
-                // --- 2. POSITIVE HR REPLY CHECK ---
+                // --- 2. POSITIVE HR REPLY CHECK & CLASSIFICATION ---
                 if (senderEmail && emailToJobMap.has(senderEmail)) {
                   const job = emailToJobMap.get(senderEmail);
 
-                  job.status = 'REPLIED';
+                  const lowerContent = `${subject} ${fetchResp}`.toLowerCase();
+
+                  // Check if HR replied that there is no opening or requirement
+                  const isNoRequirement =
+                    lowerContent.includes('no opening') ||
+                    lowerContent.includes('no current opening') ||
+                    lowerContent.includes('no requirement') ||
+                    lowerContent.includes('not hiring') ||
+                    lowerContent.includes('not currently hiring') ||
+                    lowerContent.includes('position has been filled') ||
+                    lowerContent.includes('position is filled') ||
+                    lowerContent.includes('keep your resume on file') ||
+                    lowerContent.includes('keep your profile on file') ||
+                    lowerContent.includes('future reference') ||
+                    lowerContent.includes('no vacancies') ||
+                    lowerContent.includes('not looking for') ||
+                    lowerContent.includes('no suitable opening');
+
+                  // Check if HR invited for interview/discussion
+                  const isInterview =
+                    lowerContent.includes('interview') ||
+                    lowerContent.includes('schedule a call') ||
+                    lowerContent.includes('shortlisted') ||
+                    lowerContent.includes('technical discussion') ||
+                    lowerContent.includes('initial discussion');
+
+                  let targetStatus = 'REPLIED';
+                  let timelineTitle = `Reply Received from ${senderName || senderEmail}`;
+                  let timelineDesc = `Subject: "${subject}"\n${snippet ? `Preview: ${snippet}` : ''}`;
+
+                  if (isNoRequirement) {
+                    targetStatus = 'NO_REQUIREMENT';
+                    timelineTitle = `HR Replied: No Requirement (${senderName || senderEmail})`;
+                    timelineDesc = `HR stated no current opening/requirement. Follow-up permanently suppressed.\nSubject: "${subject}"\n${snippet ? `Preview: ${snippet}` : ''}`;
+                  } else if (isInterview) {
+                    targetStatus = 'INTERVIEW';
+                    timelineTitle = `Interview Requested by ${senderName || senderEmail}`;
+                  }
+
+                  job.status = targetStatus;
                   if (!job.tracking) job.tracking = {};
-                  job.tracking.status = 'REPLIED';
+                  job.tracking.status = targetStatus;
                   job.tracking.lastContactedAt = messageDate;
+
+                  // Permanently suppress follow-up if NO_REQUIREMENT or INTERVIEW
+                  if (isNoRequirement || isInterview) {
+                    job.tracking.nextFollowUpAt = null;
+                  }
 
                   if (!job.timeline) job.timeline = [];
                   job.timeline.push({
-                    action: 'EMAIL_REPLIED',
-                    title: `Reply Received from ${senderName || senderEmail}`,
-                    description: `Subject: "${subject}"\n${snippet ? `Preview: ${snippet}` : ''}`,
+                    action: isNoRequirement ? 'NO_REQUIREMENT_RECORDED' : isInterview ? 'INTERVIEW_SCHEDULED' : 'EMAIL_REPLIED',
+                    title: timelineTitle,
+                    description: timelineDesc,
                     createdAt: messageDate,
                     meta: {
                       from: senderEmail,
                       name: senderName,
                       subject,
                       snippet,
+                      isNoRequirement,
+                      isInterview,
                     },
                   });
 
                   await job.save();
+
 
                   // Update contact
                   await Contact.updateOne(

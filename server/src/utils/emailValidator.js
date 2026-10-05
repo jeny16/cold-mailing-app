@@ -136,43 +136,118 @@ export function validateEmailFormat(rawEmail) {
   };
 }
 
+// In-memory DNS MX cache with 10-minute TTL to prevent redundant queries
+const mxCache = new Map();
+const MX_CACHE_TTL_MS = 10 * 60 * 1000;
+
 /**
  * Resolves MX (Mail Exchange) records for a domain to verify active receiving mail servers.
+ * Features in-memory caching and fallback to A records per RFC 5321.
  */
 export async function checkDomainMx(domain) {
-  if (!domain) return { hasMx: false, error: 'No domain specified' };
+  if (!domain || typeof domain !== 'string') {
+    return { hasMx: false, error: 'No domain specified' };
+  }
+
+  const cleanDomain = domain.trim().toLowerCase();
+
+  // Check cache first
+  const cached = mxCache.get(cleanDomain);
+  if (cached && Date.now() - cached.cachedAt < MX_CACHE_TTL_MS) {
+    return cached.result;
+  }
 
   return new Promise((resolve) => {
     // 4 second timeout for DNS check
     const timer = setTimeout(() => {
-      resolve({ hasMx: null, skipped: true, error: 'DNS MX check timed out' });
+      const timeoutRes = { hasMx: null, skipped: true, error: 'DNS MX check timed out' };
+      resolve(timeoutRes);
     }, 4000);
 
-    dns.resolveMx(domain, (err, addresses) => {
+    dns.resolveMx(cleanDomain, (err, addresses) => {
       clearTimeout(timer);
+
+      const cacheAndResolve = (result) => {
+        mxCache.set(cleanDomain, { result, cachedAt: Date.now() });
+        resolve(result);
+      };
+
       if (err) {
-        if (err.code === 'ENOTFOUND' || err.code === 'NODATA') {
-          resolve({ hasMx: false, error: `Domain "${domain}" has no MX mail server records` });
-        } else if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEOUT') {
-          // Gracefully handle restricted network/sandbox environments
-          resolve({ hasMx: null, skipped: true, error: `DNS check skipped (${err.code})` });
-        } else {
-          resolve({ hasMx: false, error: `DNS lookup failed for ${domain}: ${err.message}` });
+        if (err.code === 'ESERVFAIL') {
+          return cacheAndResolve({
+            hasMx: false,
+            error: `DNS MX lookup failed: nameservers for "${cleanDomain}" returned SERVFAIL (broken or misconfigured DNS)`,
+            code: 'ESERVFAIL',
+          });
         }
-        return;
+
+        if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEOUT') {
+          // Gracefully handle restricted network or sandbox environments
+          return resolve({ hasMx: null, skipped: true, error: `DNS check skipped (${err.code})` });
+        }
+
+        if (err.code === 'ENOTFOUND') {
+          return cacheAndResolve({
+            hasMx: false,
+            error: `Domain "${cleanDomain}" does not exist (NXDOMAIN / ENOTFOUND)`,
+            code: 'ENOTFOUND',
+          });
+        }
+
+        if (err.code === 'NODATA' || err.code === 'ENODATA') {
+          // RFC 5321 Fallback: check if domain has an A record that accepts mail directly
+          dns.resolve4(cleanDomain, (aErr, aAddresses) => {
+            if (!aErr && aAddresses && aAddresses.length > 0) {
+              return cacheAndResolve({
+                hasMx: true,
+                isFallbackA: true,
+                primaryExchange: cleanDomain,
+                exchanges: [cleanDomain],
+              });
+            }
+            return cacheAndResolve({
+              hasMx: false,
+              error: `Domain "${cleanDomain}" has no MX mail server records`,
+              code: 'ENODATA',
+            });
+          });
+          return;
+        }
+
+        return cacheAndResolve({
+          hasMx: false,
+          error: `DNS lookup failed for ${cleanDomain}: ${err.message}`,
+          code: err.code || 'UNKNOWN',
+        });
       }
 
       if (!addresses || addresses.length === 0) {
-        resolve({ hasMx: false, error: `No mail exchange records for domain "${domain}"` });
-      } else {
-        // Sort by priority (lowest priority number = preferred server)
-        addresses.sort((a, b) => a.priority - b.priority);
-        resolve({
-          hasMx: true,
-          primaryExchange: addresses[0].exchange,
-          exchanges: addresses.map((a) => a.exchange),
+        // Fallback to A record check
+        dns.resolve4(cleanDomain, (aErr, aAddresses) => {
+          if (!aErr && aAddresses && aAddresses.length > 0) {
+            return cacheAndResolve({
+              hasMx: true,
+              isFallbackA: true,
+              primaryExchange: cleanDomain,
+              exchanges: [cleanDomain],
+            });
+          }
+          return cacheAndResolve({
+            hasMx: false,
+            error: `No mail exchange records for domain "${cleanDomain}"`,
+            code: 'NO_RECORDS',
+          });
         });
+        return;
       }
+
+      // Sort by priority (lowest priority number = preferred server)
+      addresses.sort((a, b) => a.priority - b.priority);
+      return cacheAndResolve({
+        hasMx: true,
+        primaryExchange: addresses[0].exchange,
+        exchanges: addresses.map((a) => a.exchange),
+      });
     });
   });
 }
@@ -211,3 +286,4 @@ export default {
   checkDomainMx,
   validateEmailAddress,
 };
+

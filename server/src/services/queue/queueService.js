@@ -4,6 +4,7 @@ import { EmailLog } from '../../models/EmailLog.js';
 import { Setting } from '../../models/Setting.js';
 import { personalizeEmail } from '../personalization/templateEngine.js';
 import { sendEmail } from '../mail/mailService.js';
+import { validateEmailAddress } from '../../utils/emailValidator.js';
 import logger from '../../config/logger.js';
 
 class QueueManager {
@@ -227,13 +228,49 @@ class QueueManager {
       });
     }
 
-    // Safety guard: do not send to known bounced addresses
+    // Safety guard 1: do not send to known bounced addresses or invalid contacts
     if (contact.status === 'BOUNCED' || job.status === 'BOUNCED' || job.contactVerification?.status === 'invalid') {
       logger.warn({ jobId: job._id, email: normEmail }, '[Queue] Skipping send to known BOUNCED/invalid contact');
       job.status = 'SKIPPED';
       job.lastError = 'Skipped: Recipient email is marked as BOUNCED / invalid';
       await job.save();
       return { skipped: true, reason: 'Recipient is marked as BOUNCED' };
+    }
+
+    // Safety guard 2: Active DNS MX pre-check to prevent sending to dead domains (e.g. SERVFAIL / no MX)
+    const emailValidation = await validateEmailAddress(normEmail, { checkMx: true });
+    if (!emailValidation.valid && emailValidation.mxDetails?.hasMx === false) {
+      const failReason = emailValidation.reason || `Domain "${emailValidation.domain}" has no valid MX records`;
+      logger.warn(
+        { jobId: job._id, email: normEmail, reason: failReason },
+        '[Queue] Pre-send DNS MX check failed. Removing invalid recipient from queue.'
+      );
+
+      job.status = 'BOUNCED';
+      job.lastError = failReason;
+      if (!job.contactVerification) job.contactVerification = {};
+      job.contactVerification.status = 'invalid';
+      job.contactVerification.reason = failReason;
+
+      if (!job.tracking) job.tracking = {};
+      job.tracking.status = 'BOUNCED';
+      job.tracking.notes = (job.tracking.notes ? job.tracking.notes + '\n' : '') + `[PRE-SEND DNS FAILED] ${failReason}`;
+
+      if (!job.timeline) job.timeline = [];
+      job.timeline.push({
+        action: 'EMAIL_BOUNCED',
+        title: 'Pre-Send DNS MX Check Failed',
+        description: `Recipient domain verification failed: ${failReason}. Blocked and removed from queue to prevent delivery retry loops.`,
+        createdAt: new Date(),
+        meta: { email: normEmail, reason: failReason, isPreSendBlock: true },
+      });
+      await job.save();
+
+      contact.status = 'BOUNCED';
+      contact.notes = `DNS MX check failed: ${failReason}`;
+      await contact.save();
+
+      return { skipped: true, reason: failReason };
     }
 
     // Render personalized email
@@ -325,7 +362,128 @@ class QueueManager {
   }
 
   /**
-   * Retries a specific failed job.
+   * Removes / dequeues a single job from the queue.
+   */
+  async removeJobFromQueue(jobId, reason = 'Removed from queue by user') {
+    const job = await Job.findById(jobId);
+    if (!job) {
+      throw new Error(`Job not found with id: ${jobId}`);
+    }
+
+    const oldStatus = job.status;
+    job.status = 'SKIPPED';
+    job.lastError = reason;
+
+    if (!job.tracking) job.tracking = {};
+    job.tracking.status = 'SKIPPED';
+
+    if (!job.timeline) job.timeline = [];
+    job.timeline.push({
+      action: 'STATUS_CHANGED',
+      title: 'Removed from Queue',
+      description: reason,
+      createdAt: new Date(),
+      meta: { oldStatus, newStatus: 'SKIPPED', reason },
+    });
+
+    await job.save();
+    logger.info({ jobId, company: job.company }, '[Queue] Job removed from queue and marked SKIPPED');
+    return job;
+  }
+
+  /**
+   * Verifies all currently queued jobs with active DNS MX check.
+   * Automatically purges invalid / dead domains from the queue before sending.
+   */
+  async verifyQueuedJobs() {
+    const queuedJobs = await Job.find({ status: { $in: ['QUEUED', 'APPROVED'] } });
+    let validCount = 0;
+    const removedJobs = [];
+
+    for (const job of queuedJobs) {
+      const email = (job.hrEmail || job.contact?.email || '').trim().toLowerCase();
+      const validation = await validateEmailAddress(email, { checkMx: true });
+
+      if (!validation.valid && validation.mxDetails?.hasMx === false) {
+        const failReason = validation.reason || `Domain "${validation.domain}" has no valid MX records`;
+        
+        job.status = 'BOUNCED';
+        job.lastError = failReason;
+        if (!job.contactVerification) job.contactVerification = {};
+        job.contactVerification.status = 'invalid';
+        job.contactVerification.reason = failReason;
+
+        if (!job.tracking) job.tracking = {};
+        job.tracking.status = 'BOUNCED';
+
+        if (!job.timeline) job.timeline = [];
+        job.timeline.push({
+          action: 'EMAIL_BOUNCED',
+          title: 'DNS MX Verification Failed',
+          description: `Purged from queue: ${failReason}`,
+          createdAt: new Date(),
+          meta: { email, reason: failReason, isPreSendPurge: true },
+        });
+
+        await job.save();
+
+        await Contact.updateOne(
+          { email },
+          { $set: { status: 'BOUNCED', notes: `Verification failed: ${failReason}` } }
+        );
+
+        removedJobs.push({
+          id: job._id,
+          company: job.company,
+          role: job.role,
+          email,
+          reason: failReason,
+        });
+      } else {
+        validCount++;
+      }
+    }
+
+    logger.info(
+      `[Queue] Queue verification complete: ${queuedJobs.length} checked, ${validCount} valid, ${removedJobs.length} invalid removed`
+    );
+
+    return {
+      totalChecked: queuedJobs.length,
+      validCount,
+      removedCount: removedJobs.length,
+      removedJobs,
+    };
+  }
+
+  /**
+   * Dismisses a single failed job (marks as SKIPPED so it leaves the failed queue).
+   */
+  async dismissFailedJob(jobId) {
+    const job = await Job.findById(jobId);
+    if (!job) {
+      throw new Error(`Job not found with id: ${jobId}`);
+    }
+
+    job.status = 'SKIPPED';
+    job.lastError = job.lastError ? `[Dismissed] ${job.lastError}` : 'Dismissed from failed queue by user';
+    await job.save();
+    return job;
+  }
+
+  /**
+   * Dismisses all failed jobs.
+   */
+  async dismissAllFailed() {
+    const result = await Job.updateMany(
+      { status: 'FAILED' },
+      { $set: { status: 'SKIPPED' } }
+    );
+    return { dismissedCount: result.modifiedCount };
+  }
+
+  /**
+   * Retries a specific failed job after checking MX records to prevent repeating fatal delivery errors.
    */
   async retryJob(jobId) {
     const job = await Job.findById(jobId);
@@ -333,8 +491,14 @@ class QueueManager {
       throw new Error(`Job not found with id: ${jobId}`);
     }
 
-    if (job.status !== 'FAILED') {
-      throw new Error(`Only FAILED jobs can be retried (current status: ${job.status})`);
+    if (job.status !== 'FAILED' && job.status !== 'SKIPPED') {
+      throw new Error(`Only FAILED or SKIPPED jobs can be retried (current status: ${job.status})`);
+    }
+
+    const normEmail = (job.hrEmail || '').trim().toLowerCase();
+    const validation = await validateEmailAddress(normEmail, { checkMx: true });
+    if (!validation.valid && validation.mxDetails?.hasMx === false) {
+      throw new Error(`Cannot retry: Recipient domain "${validation.domain || normEmail}" has invalid MX records (${validation.reason})`);
     }
 
     job.status = 'QUEUED';
@@ -346,16 +510,87 @@ class QueueManager {
   }
 
   /**
-   * Retries all failed jobs up to maxRetries.
+   * Finds all follow-up-due jobs and queues them, then starts the queue.
+   * Eligible statuses: FOLLOW_UP_1_DUE, FOLLOW_UP_2_DUE, and any FOLLOW_UP
+   * where nextFollowUpAt <= now (overdue).
    */
-  async retryAllFailed(maxRetries = 3) {
-    const result = await Job.updateMany(
-      { status: 'FAILED', retryCount: { $lt: maxRetries } },
+  async queueAllFollowUps() {
+    const now = new Date();
+
+    // All explicitly DUE statuses
+    const dueByStatus = await Job.find({
+      status: { $in: ['FOLLOW_UP_1_DUE', 'FOLLOW_UP_2_DUE'] },
+      'contactVerification.status': { $ne: 'invalid' },
+    });
+
+    // Overdue generic FOLLOW_UP (nextFollowUpAt in the past)
+    const overdueGeneric = await Job.find({
+      status: 'FOLLOW_UP',
+      'tracking.nextFollowUpAt': { $lte: now },
+      'contactVerification.status': { $ne: 'invalid' },
+    });
+
+    const allDue = [...dueByStatus, ...overdueGeneric];
+
+    if (allDue.length === 0) {
+      return { queuedCount: 0, message: 'No follow-up jobs are currently due.' };
+    }
+
+    const ids = allDue.map((j) => j._id);
+    await Job.updateMany(
+      { _id: { $in: ids }, status: { $nin: ['BOUNCED', 'FAILED', 'QUEUED', 'SENDING'] } },
       { $set: { status: 'QUEUED', lastError: '' } }
     );
-    logger.info(`[Queue] Reset ${result.modifiedCount} failed jobs to QUEUED for retry`);
-    return { modifiedCount: result.modifiedCount };
+
+    const queuedCount = allDue.length;
+    logger.info(`[Queue] Queued ${queuedCount} follow-up job(s) for sending`);
+
+    // Start the queue if not already running
+    if (!this.isRunning || this.isPaused) {
+      await this.startQueue();
+    }
+
+    return { queuedCount, message: `${queuedCount} follow-up email(s) queued and queue started.` };
   }
+
+  /**
+   * Retries all failed jobs up to maxRetries, skipping any with invalid DNS/MX records.
+   */
+  async retryAllFailed(maxRetries = 3) {
+    const failedJobs = await Job.find({
+      status: 'FAILED',
+      retryCount: { $lt: maxRetries },
+      'contactVerification.status': { $ne: 'invalid' },
+    });
+
+    let requeuedCount = 0;
+    let bouncedCount = 0;
+
+    for (const job of failedJobs) {
+      const normEmail = (job.hrEmail || '').trim().toLowerCase();
+      const validation = await validateEmailAddress(normEmail, { checkMx: true });
+
+      if (validation.valid || validation.mxDetails?.hasMx !== false) {
+        job.status = 'QUEUED';
+        job.lastError = '';
+        await job.save();
+        requeuedCount++;
+      } else {
+        // Mark permanently bounced
+        job.status = 'BOUNCED';
+        job.lastError = validation.reason;
+        if (!job.contactVerification) job.contactVerification = {};
+        job.contactVerification.status = 'invalid';
+        job.contactVerification.reason = validation.reason;
+        await job.save();
+        bouncedCount++;
+      }
+    }
+
+    logger.info(`[Queue] Requeued ${requeuedCount} valid jobs for retry (permanently marked ${bouncedCount} invalid jobs as BOUNCED)`);
+    return { modifiedCount: requeuedCount, bouncedCount };
+  }
+
 }
 
 export const queueManager = new QueueManager();

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import logger from '../../config/logger.js';
 import { Setting } from '../../models/Setting.js';
+import { validateEmailAddress } from '../../utils/emailValidator.js';
 
 let transporterInstance = null;
 
@@ -95,7 +96,14 @@ export async function sendEmail({ to, subject, htmlBody, textBody, customResumeP
     throw new Error(`Invalid recipient email: ${to}`);
   }
 
+  // Pre-send validation & DNS MX check to prevent dispatching to dead domains
+  const validation = await validateEmailAddress(to, { checkMx: true });
+  if (!validation.valid && validation.mxDetails?.hasMx === false) {
+    throw new Error(`Email delivery blocked: ${validation.reason}`);
+  }
+
   const settings = await Setting.getSettings();
+
   const dryRun = isTest ? false : settings.dryRun;
 
   // Resolve resume attachment

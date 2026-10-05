@@ -70,4 +70,54 @@ describe('IMAP Reply & Bounce Tracker Service', () => {
     expect(validateEmailFormat('test@gmail.comm').isTypo).toBe(true);
     expect(validateEmailFormat('hr@company.com').isPlaceholder).toBe(true);
   });
+
+  it('should detect Gmail DNS SERVFAIL bounce messages for invalid domains like novasolutions.tech', () => {
+    const rawFailureNotice = `
+      Message not delivered
+      There was a problem delivering your message to careers@novasolutions.tech. See the technical details below.
+      The response was:
+      DNS Error: DNS type 'mx' lookup of novasolutions.tech responded with code SERVFAIL
+    `;
+
+    const isBounce = isBounceMessage({
+      rawFrom: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
+      subject: 'Delivery Status Notification (Failure)',
+      bodyText: rawFailureNotice,
+    });
+    expect(isBounce).toBe(true);
+
+    const recipient = extractBouncedRecipient(rawFailureNotice, {
+      rawFrom: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
+      subject: 'Delivery Status Notification (Failure)',
+    });
+    expect(recipient).toBe('careers@novasolutions.tech');
+
+    const reason = extractBounceReason(rawFailureNotice);
+    expect(reason).toContain('DNS Error');
+    expect(reason).toContain('SERVFAIL');
+  });
+
+  it('should detect Gmail Delivery incomplete temporary failure notice', () => {
+    const rawDelayNotice = `
+      Delivery incomplete
+      There was a temporary problem delivering your message to careers@novasolutions.tech. Gmail will retry for 22 more hours. You'll be notified
+    `;
+
+    const isBounce = isBounceMessage({
+      rawFrom: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
+      subject: 'Delivery incomplete',
+      bodyText: rawDelayNotice,
+    });
+    expect(isBounce).toBe(true);
+
+    const recipient = extractBouncedRecipient(rawDelayNotice, {
+      rawFrom: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
+      subject: 'Delivery incomplete',
+    });
+    expect(recipient).toBe('careers@novasolutions.tech');
+
+    const reason = extractBounceReason(rawDelayNotice);
+    expect(reason).toContain('Delivery incomplete');
+  });
 });
+
